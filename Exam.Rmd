@@ -1,0 +1,105 @@
+---
+title: "Exam"
+author: "Kristoffer Herrig Thorndal"
+date: "25/11/2021"
+output: pdf_document
+---
+
+```{r, echo = FALSE, message = FALSE}
+library(tidyverse)
+
+library(keras)
+
+library(lubridate)
+
+library(magrittr)
+
+library(FactoMineR)
+
+library(factoextra)
+
+library(uwot)
+
+library(GGally)
+
+library(rsample)
+
+library(ggridges)
+
+library(xgboost)
+
+library(recipes)
+
+library(parsnip)
+
+library(glmnet)
+
+library(tidymodels)
+
+library(skimr)
+
+library(VIM)
+
+library(visdat)
+
+library(ggmap)
+
+library(ranger)
+
+library(vip)
+```
+
+# Load the data
+```{r}
+data_start <- read_excel("SDS M3.xlsx")
+
+```
+
+# preprocess
+
+```{r}
+data = data_start %>%
+  rename(y = "Label") %>%
+  relocate(y) %>%
+  select(-"Dato")
+```
+
+# we create training and testing data
+
+Just to get an idea how the y variable is split between whether the list of closing balances for stocks will rise or fall (be 1 or 0) we can make a histogram
+```{r}
+data %>% 
+  ggplot(aes(y)) +
+  geom_bar()
+```
+We can see, that it tends to rise from period to period. So to be certain that the training and test data will be as similar as possible we set the strata argument equal to y when we split the data.
+
+```{r}
+library(rsample)
+data_split <- initial_split(data, prop = 0.75, strata = y)
+
+data_train <- data_split  %>%  training()
+data_test <- data_split %>% testing()
+```
+
+# Recipe
+```{r}
+library(recipes)
+data_recipe <- data_train %>%
+  recipe(y ~.) %>%
+  step_center(all_numeric(), -all_outcomes()) %>% # Centers all numeric variables to mean = 0
+  step_scale(all_numeric(), -all_outcomes()) %>% # scales all numeric variables to sd = 1
+  step_dummy(all_nominal(), one_hot = TRUE) %>%
+  prep()
+```
+
+```{r}
+x_train <- juice(data_recipe) %>% select(-starts_with('y')) %>% as.matrix()
+x_test <- bake(data_recipe, new_data = data_test) %>% select(-starts_with('y')) %>% as.matrix()
+```
+
+```{r}
+y_train <- juice(data_recipe)  %>% select(starts_with('y')) %>% as.matrix()
+y_test <- bake(data_recipe, new_data = data_test) %>% select(starts_with('y')) %>% as.matrix()
+```
+
