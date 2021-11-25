@@ -60,8 +60,7 @@ data_start <- read_excel("SDS M3.xlsx")
 ```{r}
 data = data_start %>%
   rename(y = "Label") %>%
-  relocate(y) %>%
-  select(-"Dato")
+  relocate(y)
 ```
 
 # we create training and testing data
@@ -73,6 +72,154 @@ data %>%
   geom_bar()
 ```
 We can see, that it tends to rise from period to period. So to be certain that the training and test data will be as similar as possible we set the strata argument equal to y when we split the data.
+
+
+We plot our time series
+```{r}
+data %>% 
+  plot_time_series(Dato, `Ultimobalance aktier`)
+```
+
+# Preprocessing ifølge workshop 2
+
+```{r}
+# Limit data
+data_stock <- data%>%
+  rename(index = Dato, value = `Ultimobalance aktier`) %>%
+  select(index, value) %>%
+  arrange(index) 
+```
+
+* It is always easier to model change rather than absolute prices, so we create a variable measuring the percentage change of price instead
+
+```{r}
+# Remodel value as percentage change
+data_stock %<>%
+  distinct(index, .keep_all = TRUE) %>%
+  tidyr::fill(value, .direction = "downup") %>%
+  mutate(value = (value - lag(value,1)) / lag(value,1) ) %>%
+  drop_na()
+```
+
+```{r}
+data_stock %>%
+  ggplot(aes(x = index, y = value)) +
+  geom_line() +
+  labs(x = 'Date', y = "Stock change in pct") 
+```
+
+
+```{r}
+data_stock %>%
+    plot_acf_diagnostics(date, value)
+```
+
+## Train & Test split
+
+* We do a time-series split which keeps the sequencing of the data
+
+```{r}
+# We use time_splits here to maintain the sequences
+data_split <- data_stock %>% initial_time_split(prop = 0.75)
+```
+
+```{r}
+data_train <- data_split %>% training()
+data_test <- data_split %>% testing()
+```
+
+* Lets see from where till when the train/test samples are
+
+```{r}
+# See ehat we got
+data_train %>% pull(index) %>% min()
+data_train %>% pull(index) %>% max()
+data_test %>% pull(index) %>% min()
+data_test %>% pull(index) %>% max()
+```
+
+```{r}
+data_train %>% mutate(split = 'training') %>%
+  bind_rows(data_test %>% mutate(split = 'testing')) %>%
+  ggplot(aes(x = index, y = value, col = split)) +
+  geom_line() 
+```
+
+## Define a receipe
+
+* We only apply min-max scaling herewith `step_range`
+
+```{r}
+data_recipe <- data_train %>%
+  recipe(value ~ .) %>% 
+  step_normalize(value) %>%
+  step_arrange(index) %>%
+  prep()
+```
+
+* We save the min and max to rescale later again
+
+```{r}
+# Preserve the values for later (to reconstruct original values)
+prep_history <- tibble(
+  mean = data_recipe$steps[[1]]$means,
+  sds = data_recipe$steps[[1]]$sds
+)
+```
+
+```{r}
+prep_history
+```
+
+## Get processed train & test data
+
+* We now create a x and y split. Since we here always predict the next observation, that's easy. We will just set y= lead(x, 1)
+* We replace the last missing observation with the lagged value
+
+```{r}
+# Number of lags
+n_lag = 1
+
+# Train data
+x_train <- data_recipe %>% juice()
+
+y_train <- data_recipe %>%  juice() %>%
+  mutate(value = value %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+
+# And the same for the test data
+x_test <- data_recipe %>% bake(data_test) 
+
+y_test <- data_recipe %>%  bake(data_test) %>%  
+  mutate(value = value %>% lead(n_lag)) %>%
+  tidyr::fill(value, .direction = "downup") 
+```
+
+## Transform to a 3d tensor for keras
+
+```{r}
+# TRansforming the x sequence to a 3d tensor (necessary for LSTMs)
+x_train_arr <- x_train %>% pull(value) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+x_test_arr <- x_test %>% pull(value) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1, 1))
+
+y_train_arr <- y_train %>% pull(value) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+y_test_arr <- y_test %>% pull(value) %>% as.numeric() %>% array_reshape(dim = c(length(.), 1))
+```
+
+
+```{r}
+x_train_arr %>% dim()
+```
+
+```{r}
+x_train_arr %>% glimpse()
+```
+
+# Klar til LSTM
+
+
+
+## Sådan som vi gjorde før vores pivot
 
 ```{r}
 library(rsample)
