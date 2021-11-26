@@ -1,0 +1,47 @@
+---
+title: "Test"
+author: "Andreas Methling"
+date: "26/11/2021"
+output: pdf_document
+---
+
+```{r}
+library(readr)
+library(tidyverse)
+library(writexl)
+
+data <- read_csv("C:/Users/andre/Desktop/lyrics-data.csv") #Skal ændres af alle
+
+artists_data <- read_csv("C:/Users/andre/Downloads/artists-data.csv") #Same
+
+```
+
+
+```{r}
+artists = artists_data %>% 
+  group_by(Artist) %>% 
+  count(Genre) %>% 
+  pivot_wider(names_from = Genre, values_from = n) %>% 
+  replace_na(list(Pop = 0, "Hip Hop" = 0, Rock = 0, "Funk Carioca" = 0, "Sertanejo" = 0, Samba = 0 )) %>% 
+  ungroup() %>% 
+  left_join(artists_data, by = c("Artist")) %>% 
+  select(-c(Genre, Genres, Popularity)) %>% 
+  distinct()
+```
+
+
+```{r}
+
+data = data %>% 
+  filter(Idiom == "ENGLISH") %>% 
+  rename("Link" = "ALink") %>% 
+  inner_join(artists, by = c("Link")) %>% 
+  distinct() %>% 
+  select(-c(Link, SLink, Songs))
+
+```
+
+```{r}
+write_xlsx(data, "C:/Users/andre/Dropbox/Uni/7. semester/SDS M3/data.xlsx")
+```
+
