@@ -41,7 +41,4 @@ data = data %>%
 
 ```
 
-```{r}
-write_xlsx(data, "C:/Users/andre/Dropbox/Uni/7. semester/SDS M3/data.xlsx")
-```
 
