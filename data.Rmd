@@ -10,8 +10,8 @@ library(readr)
 library(tidyverse)
 
 
-data_start <- read_csv("C:/Users/Simon ik mig/Downloads/lyrics-data.csv.zip") #Simon
-artists_data <- read_csv("C:/Users/Simon ik mig/Downloads/artists-data (1).csv")# Simon 
+data_start <- read_csv("/Users/Kristoffer/Desktop/lyrics.zip") #Kristoffer
+artists_data <- read_csv("/Users/Kristoffer/Desktop/artists-data.csv") #Ikke Kristoffer
 
 ```
 
