@@ -1,0 +1,139 @@
+---
+title: "Test"
+author: "Andreas Methling"
+date: "26/11/2021"
+output: pdf_document
+---
+
+```{r}
+library(readr)
+library(tidyverse)
+
+
+data_start <- read_csv("/Users/Kristoffer/Desktop/lyrics.zip") #Kristoffer
+artists_data <- read_csv("/Users/Kristoffer/Desktop/artists-data.csv") #Ikke Kristoffer
+
+```
+
+
+```{r}
+artists = artists_data %>% 
+  group_by(Artist) %>% 
+  count(Genre) %>% 
+  pivot_wider(names_from = Genre, values_from = n) %>% 
+  replace_na(list(Pop = 0, "Hip Hop" = 0, Rock = 0, "Funk Carioca" = 0, "Sertanejo" = 0, Samba = 0 )) %>% 
+  ungroup() %>% 
+  left_join(artists_data, by = c("Artist")) %>% 
+  select(-c(Genre, Genres, Popularity)) %>% 
+  distinct()
+```
+
+
+```{r}
+glimpse(data_start)
+
+data = data_start %>% 
+  filter(Idiom == "ENGLISH") %>% 
+  rename("Link" = "ALink") %>% 
+  inner_join(artists, by = c("Link")) %>% 
+  distinct() %>%
+  mutate(name = paste(Artist, SName))%>%
+  rename(text=Lyric) %>%
+  filter(Rock==1 & Pop==1) %>%
+  select(name, text)%>%
+  distinct(name, .keep_all = T)
+
+
+data %>%
+  count(name, sort = T)
+
+```
+
+
+
+# Make labels 
+
+```{r}
+library(tidytext)
+text_tidy = data %>% unnest_tokens(word, text, token = "words")
+
+head(text_tidy)
+```
+
+```{r}
+text_tidy %<>%
+  filter(str_length(word) > 2 ) %>% 
+  group_by(word) %>%
+  ungroup() %>%
+  anti_join(stop_words, by = 'word') 
+```
+
+```{r}
+library(hunspell)
+text_tidy %>%
+  mutate(stem = hunspell_stem(word)) %>%
+  unnest(stem) %>%
+  count(stem, sort = TRUE)
+
+
+text_tidy %<>% 
+  mutate(stem = hunspell_stem(word)) %>%
+  unnest(stem) %>%
+   select(-word) %>%
+  rename(word = stem)
+
+
+
+```
+
+```{r}
+top_10000_words=text_tidy %>%
+  count(word,sort = T) %>%
+  head(10000) %>%
+  select(word)
+
+data_top_10000=top_10000_words %>%
+  left_join(text_tidy, by= c("word")) 
+
+```
+
+# Bing
+```{r}
+sentiment_bing= data_top_10000 %>%
+  inner_join(get_sentiments("bing")) %>%
+  mutate(sentiment= ifelse(sentiment == "positive", 1,0)) 
+
+sentiment_bing %<>%
+  group_by(name) %>%
+  summarise(mean= mean(sentiment))%>%
+  mutate(label= ifelse(mean>=0.5, 1,0))
+
+```
+
+# Afinn
+
+```{r}
+sentiment_afinn= data_top_10000 %>%
+  inner_join(get_sentiments("afinn")) 
+
+sentiment_afinn %<>%
+  group_by(name) %>%
+  summarise(mean= mean(value))%>%
+  mutate(label= ifelse(mean>=0, 1,0))
+
+```
+
+# Data
+
+```{r}
+data_bing= sentiment_bing %>%
+  inner_join(data)%>%
+  select(text, label, name)
+  
+
+data_afinn= sentiment_afinn %>%
+  inner_join(data)%>%
+  select(text, label, name)
+```
+
+
