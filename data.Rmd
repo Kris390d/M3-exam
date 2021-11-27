@@ -120,10 +120,11 @@ multi_data_new=sentiment_nrc %>%
   mutate(label= pmax(trust, joy, sadness, fear)) %>%
   mutate(label= ifelse(label == fear, "fear", ifelse(label == trust, "trust", ifelse(label == sadness, "sadness", ifelse(label == joy, "joy","none label")))))  %>%
   select(name, label) %>%
+  rename(y= label)%>%
   inner_join(data)
 
 multi_data_new %>%
-  count(label)
+  count(y)
 
 
 multi_data %>%
@@ -299,6 +300,80 @@ history <- model %>% fit(
 
 
 
-# multiclass
+# multiclass model 
 
 
+## Data preprocess
+
+```{r}
+library(rsample)
+
+split_multi= initial_split(multi_data_new, prop = 0.75)
+
+train_data_multi= training(split_multi)
+test_data_multi= testing(split_multi)
+```
+
+
+Then we extract our x and y training and test data to be used in the neural networks.
+```{r}
+x_train_data= train_data_multi %>% pull(text)
+y_train_data= train_data_multi %>% select('y', "name") %>% mutate(n= 1) %>% pivot_wider(names_from = y, values_from = n, values_fill = 0) %>% select(-name) %>% as.matrix()
+
+x_test_data= test_data_multi %>% pull(text)
+y_test_data= test_data_multi %>% pull(y)
+
+
+
+```
+
+
+```{r}
+
+# For Training data
+tokenizer <- text_tokenizer(num_words = 1000) %>%                         
+  fit_text_tokenizer(x_train_data)                                        
+sequences <- texts_to_sequences(tokenizer, x_train_data)                       
+one_hot_train <- texts_to_matrix(tokenizer, x_train_data, mode = "binary")   
+
+# For test data
+
+tokenizer <- text_tokenizer(num_words = 1000) %>%                         
+  fit_text_tokenizer(x_test_data)                                        
+sequences <- texts_to_sequences(tokenizer, x_test_data)                       
+one_hot_test <- texts_to_matrix(tokenizer, x_test_data, mode = "binary")
+```
+
+## ANN
+
+```{r}
+model <- keras_model_sequential() %>%
+  layer_dense(units = 16, activation = "relu", input_shape = c(1000)) %>%
+  layer_dense(units = 16, activation = "relu") %>%
+  layer_dense(units = 1, activation = "softmax")
+```
+
+
+```{r}
+model %>% compile(
+  optimizer = "adam",
+  loss = "categorical_crossentropy",
+  metrics = "accuracy"
+)
+```
+
+```{r}
+summary(model)
+```
+
+
+
+```{r}
+history_ann <- model %>% fit(
+  one_hot_train,
+  y_train_data,
+  epochs = 10,
+  batch_size = 512,
+  validation_split = 0.25
+)
+```
