@@ -9,7 +9,6 @@ output: pdf_document
 library(readr)
 library(tidyverse)
 
-
 data_start <- read_csv("/Users/Kristoffer/Desktop/lyrics.zip") #Kristoffer
 artists_data <- read_csv("/Users/Kristoffer/Desktop/artists-data.csv") #Ikke Kristoffer
 
