@@ -39,7 +39,7 @@ data = data_start %>%
   distinct() %>%
   mutate(name = paste(Artist, SName))%>%
   rename(text=Lyric) %>%
-  filter(Rock==1 & Pop==1) %>%
+  filter(Rock==1) %>%
   select(name, text)%>%
   distinct(name, .keep_all = T)
 
@@ -97,8 +97,44 @@ data_top_10000=top_10000_words %>%
 
 ```
 
-# Bing
+# nrc multiclass
+
 ```{r}
+sentiment_nrc <- text_tidy %>%  
+  inner_join(get_sentiments("nrc"))
+
+multi_data=sentiment_nrc %>%
+  filter(sentiment %in% c("negative", "positive", "joy", "fear")) %>%
+  count(name, sentiment) %>%
+  pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>%
+  mutate(label= pmax(positive, joy, negative, fear)) %>%
+  mutate(label= ifelse(label == fear, "fear", ifelse(label == positive, "positive", ifelse(label == negative, "negative", ifelse(label == joy, "joy","none label")))))  %>%
+  select(name, label) %>%
+  inner_join(data)
+
+
+multi_data_new=sentiment_nrc %>%
+  filter(sentiment %in% c("trust", "sadness", "joy", "fear")) %>%
+  count(name, sentiment) %>%
+  pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>%
+  mutate(label= pmax(trust, joy, sadness, fear)) %>%
+  mutate(label= ifelse(label == fear, "fear", ifelse(label == trust, "trust", ifelse(label == sadness, "sadness", ifelse(label == joy, "joy","none label")))))  %>%
+  select(name, label) %>%
+  inner_join(data)
+
+multi_data_new %>%
+  count(label)
+
+
+multi_data %>%
+  count(label)
+```
+
+
+# bing
+```{r}
+
+
 sentiment_bing= data_top_10000 %>%
   inner_join(get_sentiments("bing")) %>%
   mutate(sentiment= ifelse(sentiment == "positive", 1,0)) 
@@ -128,12 +164,141 @@ sentiment_afinn %<>%
 ```{r}
 data_bing= sentiment_bing %>%
   inner_join(data)%>%
-  select(text, label, name)
+  select(text, label, name)%>%
+  rename(y=label)
   
 
 data_afinn= sentiment_afinn %>%
   inner_join(data)%>%
   select(text, label, name)
 ```
+```{r}
+library(rsample)
+
+split= initial_split(data_bing, prop = 0.75)
+
+train_data= training(split)
+test_data= testing(split)
+```
+
+
+Then we extract our x and y training and test data to be used in the neural networks.
+```{r}
+x_train_data= train_data %>% pull(text)
+y_train_data= train_data %>% pull(y)
+
+x_test_data= test_data %>% pull(text)
+y_test_data= test_data %>% pull(y)
+
+head(x_train_data)
+
+```
+
+
+
+```{r}
+library(keras)
+# For Training data
+tokenizer <- text_tokenizer(num_words = 10000) %>%                         
+  fit_text_tokenizer(x_train_data)                                        
+sequences <- texts_to_sequences(tokenizer, x_train_data)                       
+one_hot_train <- texts_to_matrix(tokenizer, x_train_data, mode = "binary")   
+
+# For test data
+
+tokenizer <- text_tokenizer(num_words = 10000) %>%                         
+  fit_text_tokenizer(x_test_data)                                        
+sequences <- texts_to_sequences(tokenizer, x_test_data)                       
+one_hot_test <- texts_to_matrix(tokenizer, x_test_data, mode = "binary")
+```
+
+
+
+
+
+
+```{r}
+model <- keras_model_sequential() %>%
+  layer_dense(units = 16, activation = "relu", input_shape = c(10000)) %>%
+  layer_dense(units = 16, activation = "relu") %>%
+  layer_dense(units = 1, activation = "sigmoid")
+```
+
+
+```{r}
+model %>% compile(
+  optimizer = "adam",
+  loss = "binary_crossentropy",
+  metrics = "accuracy"
+)
+```
+
+```{r}
+summary(model)
+```
+
+```{r}
+history_ann <- model %>% fit(
+  one_hot_train,
+  y_train_data,
+  epochs = 10,
+  batch_size = 512,
+  validation_split = 0.25
+)
+```
+
+
+
+## Embeding RNN
+
+```{r}
+model_emb <- keras_model_sequential() %>%
+  layer_embedding(input_dim = 10000, output_dim = 8,            
+                  input_length = 300) %>%
+  layer_flatten() %>%                                           
+  layer_dense(units = 1, activation = "sigmoid")
+
+
+model_emb %>% compile(
+  optimizer = "rmsprop",
+  loss = "binary_crossentropy",
+  metrics = c("acc")
+)
+
+summary(model_emb)
+
+history <- model %>% fit(
+  one_hot_train, y_train_data,
+  epochs = 10,
+  batch_size = 32,
+  validation_split = 0.2)
+```
+
+## LSTM
+
+
+```{r}
+#model <- keras_model_sequential() %>%
+  #layer_embedding(input_dim = 10000, output_dim = 32) %>%
+  #layer_lstm(units = 32) %>%
+  #layer_dense(units = 1, activation = "sigmoid")
+
+#model %>% compile(
+  #optimizer = "rmsprop",
+  #loss = "binary_crossentropy",
+  #metrics = c("acc")
+#)
+
+#history <- model %>% fit(
+  #one_hot_train, y_train_data,
+  #epochs = 3,
+  #batch_size = 62,
+  #validation_split = 0.2
+#)
+```
+
+
+
+# multiclass
 
 
