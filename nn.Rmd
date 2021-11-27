@@ -138,7 +138,7 @@ data_afinn= sentiment_afinn %>%
   select(text, label, name)
 ```
 
-# Neural Network
+# Neural Network Bing
 
 ```{r}
 data_bing_n= data_bing %>%
@@ -187,9 +187,9 @@ sequences_test = texts_to_sequences(tokenizer_test, x_test_data)
 
 ```
 
-# Baseline model
+## Baseline model
 
-## One-hot encoding
+### One-hot encoding
 
 we use this function Daniel made to vectorize the sequences :)
 ```{r}
@@ -212,7 +212,7 @@ str(x_train[1,])
 ```
 What the above has done to the data is, that every tweet now is a row and every feature/word now is a column and then if the tweets has e.g. word 1 then it would have the value 1 otherwise zero. So we basically now have a matrix of size [2365x10000] [number of tweets in training set x number of words].
 
-## The model
+###The model
 
 The above data is then used in our baseline model with an input shape of 10000 because that is the size of our input. Then we run it through two dense "relu" layers which is normal procedure for a baseline model. Lastly we have a dense layer with the output which is of unit 1 and is a "sigmoid" layer which means it returns a value between 0 and 1 as we want, as we wanna figure out if a tweet is fake or real.
 ```{r}
@@ -254,8 +254,8 @@ history_ann <- model %>% fit(
 plot(history_ann)
 ```
 
-# Rnn model with paded data
-## Padding
+## Rnn model with paded data
+### Padding
 In our first baseline model, we used a document-term matrix as inputs for training, with one-hot-encodings (= dummy variables) for the 10.000 most popular terms. This has a couple of disadvantages. Besides being a very large and sparse vector for every review, as a “bag-of-words”, it did not take the word-order (sequence) into account.
 
 This time, we use a different approach, therefore also need a different input data-structure. We now use pad_sequences() to create a integer tensor of shape (samples, word_indices). However, tweets vary in length, which is a problem since Keras requieres the inputs to have the same shape across the whole sample. Therefore, we use the maxlen = 100 argument, to restrict ourselves to the first 100 words in every tweet also because a tweet maximally can be 280 characters.
@@ -274,7 +274,7 @@ glimpse(x_train_pad)
 Now if the value in e.g. the first column of the first tweet is 0 it means that the first  word in the first tweet is not one of the 10000 most used words and there for our model has no integer for it. If there is an integer e.g. "386" it means that that the 386 most commonly used word is the first word in the tweet.
 
 
-### The model
+#### The model
 
 setting up the model we will first use a layer_embedding to compress our initial one-hot-encoding vector of length 10.000 to a “meaning-vector” (=embedding) of the lower dimensionality of 32. Then we add a layer_simple_rnn on top, and finally a layer_dense for the binary prediction of review sentiment.
 ```{r}
@@ -313,12 +313,166 @@ history_rnn <- model_rnn %>% fit(
 ```{r, warning=FALSE}
 plot(history_rnn) 
 ```
-Again after a couple of epochs our model seems to be overfitted as the validation set crosses with our traning set, but our traning set has a rather high accuracy at the point of crossing so overall a good model.
 
-Let's try to put the models on top of each other
+# Neural Network Afinn
 
-```{r, fig.height = 4.5, fig.width = 7.5, fig.align = "center"}
-par(mfrow=c(2,1))
-plot(history_ann); plot(history_rnn)
+```{r}
+data_afinn_n= data_afinn %>%
+  rename( y = label )
+```
 
+
+We start by creating test and training data 
+
+```{r}
+library(rsample)
+
+split2= initial_split(data_afinn_n, prop = 0.75)
+
+train_data2= training(split2)
+test_data2= testing(split2)
+```
+
+
+```{r}
+x_train_data2= train_data2 %>% pull(text)
+y_train_data2= train_data2 %>% pull(y)
+
+x_test_data2= test_data2 %>% pull(text)
+y_test_data2= test_data2 %>% pull(y)
+```
+
+```{r}
+library(keras)
+
+#for training data
+tokenizer_train2 <- text_tokenizer(num_words = 100000,
+                                  filters = "!\"#$%&()*+,-./:;<=>?@[\\]^_`{|}~\t\n" ) %>%
+  fit_text_tokenizer(x_train_data2)
+
+sequences_train2 = texts_to_sequences(tokenizer_train2, x_train_data2)
+
+
+#For test data
+
+tokenizer_test2 <- text_tokenizer(num_words = 100000,
+                                 filters = "!\"#$%&()*+,-./:;<=>?@[\\]^_`{|}~\t\n" ) %>%
+  fit_text_tokenizer(x_test_data2)
+
+sequences_test2 = texts_to_sequences(tokenizer_test2, x_test_data2)
+
+```
+
+## Baseline model
+
+### One-hot encoding
+
+```{r}
+x_train2 <- sequences_train2 %>% vectorize_sequences(dimension = 100000) 
+x_test2 <- sequences_test2 %>% vectorize_sequences(dimension = 100000) 
+
+str(x_train2[1,])
+```
+What the above has done to the data is, that every tweet now is a row and every feature/word now is a column and then if the tweets has e.g. word 1 then it would have the value 1 otherwise zero. So we basically now have a matrix of size [2365x10000] [number of tweets in training set x number of words].
+
+###The model
+
+The above data is then used in our baseline model with an input shape of 10000 because that is the size of our input. Then we run it through two dense "relu" layers which is normal procedure for a baseline model. Lastly we have a dense layer with the output which is of unit 1 and is a "sigmoid" layer which means it returns a value between 0 and 1 as we want, as we wanna figure out if a tweet is fake or real.
+```{r}
+model_keras3 <- keras_model_sequential()
+
+model2 <- model_keras3 %>%
+  layer_dense(units = 32, activation = "relu", input_shape = c(100000)) %>%
+  layer_dropout(rate = 0.1) %>% 
+  layer_dense(units = 32, activation = "relu") %>%
+  layer_dropout(rate = 0.1) %>% 
+  layer_dense(units = 1, activation = "sigmoid")
+```
+
+We use baseline model compiling with optimizer "adam", loss "binary" as we are dealing with a binary case and the metric we wanna maximize is accurary.
+```{r}
+model2 %>% compile(
+  optimizer = "adam",
+  loss = "binary_crossentropy",
+  metrics = "accuracy"
+)
+```
+
+Here the structure of the model can be viewed
+```{r}
+summary(model2)
+```
+And now the model is run 10 times with a batch size of 512
+```{r}
+history_ann <- model2 %>% fit(
+  x_train2,
+  y_train_data2,
+  epochs = 10,
+  batch_size = 128,
+  validation_split = 0.25
+)
+```
+
+```{r}
+plot(history_ann)
+```
+
+## Rnn model with paded data
+### Padding
+In our first baseline model, we used a document-term matrix as inputs for training, with one-hot-encodings (= dummy variables) for the 10.000 most popular terms. This has a couple of disadvantages. Besides being a very large and sparse vector for every review, as a “bag-of-words”, it did not take the word-order (sequence) into account.
+
+This time, we use a different approach, therefore also need a different input data-structure. We now use pad_sequences() to create a integer tensor of shape (samples, word_indices). However, tweets vary in length, which is a problem since Keras requieres the inputs to have the same shape across the whole sample. Therefore, we use the maxlen = 100 argument, to restrict ourselves to the first 100 words in every tweet also because a tweet maximally can be 280 characters.
+
+The data is paded
+```{r}
+x_train_pad2 <- sequences_train2 %>% pad_sequences(maxlen=1000)
+x_test_pad2 <- sequences_test2 %>% pad_sequences(maxlen=1000)
+
+```
+
+
+```{r}
+glimpse(x_train_pad2)
+```
+Now if the value in e.g. the first column of the first tweet is 0 it means that the first  word in the first tweet is not one of the 10000 most used words and there for our model has no integer for it. If there is an integer e.g. "386" it means that that the 386 most commonly used word is the first word in the tweet.
+
+
+#### The model
+
+setting up the model we will first use a layer_embedding to compress our initial one-hot-encoding vector of length 10.000 to a “meaning-vector” (=embedding) of the lower dimensionality of 32. Then we add a layer_simple_rnn on top, and finally a layer_dense for the binary prediction of review sentiment.
+```{r}
+model_keras4 <- keras_model_sequential()
+
+model_rnn2 <- model_keras4 %>%
+  layer_embedding(input_dim = 100000, output_dim = 32) %>%
+  layer_simple_rnn(units = 32, activation = "tanh") %>%
+  layer_dense(units = 1, activation = "sigmoid")
+```
+
+Here the structure of the model can be seen
+```{r}
+summary(model_rnn2)
+```
+
+Again we use a basic setup for binary prediction.
+```{r}
+model_rnn2 %>% compile(
+  optimizer = "adam",
+  loss = "binary_crossentropy",
+  metrics = "accuracy"
+)
+```
+
+
+```{r}
+history_rnn2 <- model_rnn2 %>% fit(
+  x_train_pad2, y_train_data2,
+  epochs = 10,
+  batch_size = 128,
+  validation_split = 0.25
+)
+```
+
+```{r, warning=FALSE}
+plot(history_rnn2) 
 ```
