@@ -387,20 +387,20 @@ plot(history_rnn)
 Again the traning set outperforms the validation set a lot, which shows our model is overfitted. Further we see that the loss of the validation set starts to climb after a couple of epochs and the accuracy to fall, so not a good model.
 
 ```{r}
-metrics3 = model_rnn %>% evaluate(x_test, y_test_data); metrics3
+metrics3 = model_rnn %>% evaluate(x_test_pad, y_test_data); metrics3
 ```
-Running our model on the test data shows an accuracy of 60%, but we will now try to fine tune it to make it better.
+Running our model on the test data shows an accuracy of 52%, but we will now try to fine tune it to make it better.
 
 #### Tunning the model
 
-This time we again try to reduce the number of parameters to prevent over fitting. We also make another rnn layer 
+This time we again try to reduce the number of parameters to prevent over fitting. We also make another rnn layer and drop a fraction of the units with a drop_out input.
 ```{r}
 model_keras2 <- keras_model_sequential()
 
 model_rnn2 <- model_keras2 %>%
   layer_embedding(input_dim = 5000, output_dim = 16) %>%
-  layer_simple_rnn(units = 16, return_sequences = TRUE, activation = "tanh" ) %>%
-  layer_simple_rnn(units = 16, return_sequences = FALSE, activation = "tanh") %>%
+  layer_simple_rnn(units = 16, return_sequences = TRUE, activation = "tanh",recurrent_dropout=0.1) %>%
+  layer_simple_rnn(units = 16, return_sequences = FALSE, activation = "tanh", recurrent_dropout=0.1) %>%
   layer_dense(units = 1, activation = "sigmoid")
 ```
 
@@ -423,8 +423,8 @@ And run our model
 set.seed(12345)
 history_rnn2 <- model_rnn2 %>% fit(
   x_train_pad, y_train_data,
-  epochs = 10,
-  batch_size = 256,
+  epochs = 25,
+  batch_size = 516,
   validation_split = 0.25
 )
 ```
@@ -434,12 +434,12 @@ history_rnn2 <- model_rnn2 %>% fit(
 plot(history_rnn2) 
 ```
 
-Again the traning set outperforms the validation set a lot, which shows our model is overfitted. Further we see that the loss of the validation set starts to climb after a couple of epochs and the accuracy to fall, so not a good model.
+The loss of the traning and validation data seems to follow each other quiet well for the first couple of epochs. After that the validation set begin to vary a lot flying up and down. The accuracy also follows each other a lot, but after around 12 epocs they cross and the traning data runs of. 
 
 ```{r}
-metrics3 = model_rnn %>% evaluate(x_test, y_test_data); metrics3
+metrics4 = model_rnn2 %>% evaluate(x_test_pad, y_test_data); metrics4
 ```
-Running our model on the test data shows an accuracy of 60%, but we will now try to fine tune it to make it better.
+Running our model on the test data shows an accuracy of 58%, this is better than the baseline model but now at all good.
 
 
 ## LTSM
