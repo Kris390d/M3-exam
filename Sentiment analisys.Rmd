@@ -1,0 +1,316 @@
+---
+title: "Test"
+author: "Andreas Methling"
+date: "26/11/2021"
+output: pdf_document
+---
+
+```{r, message=FALSE}
+library(tidyverse)
+library(lubridate)
+library(magrittr)
+library(FactoMineR)
+library(factoextra)
+library(uwot)
+library(GGally)
+library(rsample)
+library(ggridges)
+library(xgboost)
+library(recipes)
+library(parsnip)
+library(glmnet)
+library(tidymodels)
+library(skimr)
+library(VIM)
+library(visdat)
+library(ggmap)
+library(ranger)
+library(vip)
+library(SnowballC)
+library(tokenizers)
+library(formatR)
+
+```
+
+```{r}
+library(readr)
+
+data_start <- read_csv("C:/Users/Simon ik mig/Downloads/lyrics-data.csv.zip") #Simon
+artists_data <- read_csv("C:/Users/Simon ik mig/Downloads/artists-data (1).csv")# Simon 
+
+artists_data %>%
+  count(Genre)
+
+#data_start <- read_csv("C:/Users/Mikkel/Desktop/UNI/SDS/M3/lyrics-data.csv") Mikkel 
+#artists_data <- read_csv("C:/Users/Mikkel/Desktop/UNI/SDS/M3/artists-data.csv") Mikkel
+
+```
+
+
+```{r}
+artists = artists_data %>% 
+  group_by(Artist) %>% 
+  count(Genre) %>% 
+  pivot_wider(names_from = Genre, values_from = n) %>% 
+  replace_na(list(Pop = 0, "Hip Hop" = 0, Rock = 0, "Funk Carioca" = 0, "Sertanejo" = 0, Samba = 0 )) %>% 
+  ungroup() %>% 
+  left_join(artists_data, by = c("Artist")) %>% 
+  select(-c(Genre, Genres, Popularity, Songs)) %>% 
+  distinct()
+```
+
+```{r}
+data_genre = data_start %>% 
+  filter(Idiom == "ENGLISH") %>% 
+  rename("Link" = "ALink") %>% 
+  inner_join(artists, by = c("Link")) %>% 
+  distinct() %>%
+  mutate(name = paste(Artist, SName))%>%
+  rename(text=Lyric) %>%
+  filter(Pop==1 | Rock==1) %>%
+  select(name, text, Pop, Rock) %>%
+  distinct(name, .keep_all = T)
+
+
+
+data_pop_rock=data_genre %>%
+  mutate(genre = ifelse(Pop==1 & Rock == 1, "pop/rock", ifelse(Rock==1 & Pop==0, "Rock", ifelse(Rock == 0 & Pop == 1, "Pop", 0)))) %>%
+  select(-c(Pop, Rock))
+
+data_pop_rock_labels= data_pop_rock %>%
+  select(name, genre)
+```
+
+#Preprocessing / EDA
+
+First we tokenize the data. 
+```{r}
+library(tidytext)
+text_genre_tidy = data_pop_rock %>% unnest_tokens(word, text, token = "words")
+
+head(text_genre_tidy)
+```
+
+We remove short words and stopwords.
+```{r}
+text_genre_tidy %<>%
+  filter(str_length(word) > 2 ) %>% 
+  group_by(word) %>%
+  ungroup() %>%
+  anti_join(stop_words, by = 'word') 
+```
+
+We use the hunspell package, which seems to produce the best stemming for our data. Reducing a word to its “root” word. 
+```{r}
+library(hunspell)
+text_genre_tidy %>%
+  mutate(stem = hunspell_stem(word)) %>%
+  unnest(stem) %>%
+  count(stem, sort = TRUE)
+
+text_genre_tidy %<>% 
+  mutate(stem = hunspell_stem(word)) %>%
+  unnest(stem) %>%
+  select(-word) %>%
+  rename(word = stem)
+
+```
+
+We weight the data using tf-idf (Term-frequency Inverse document frequency). 
+```{r}
+# TFIDF weights
+text_tf_idf= text_genre_tidy %>%
+group_by(name) %>%
+  count(word, sort = TRUE) %>%
+  ungroup() %>% 
+  bind_tf_idf(word, name, n) %>%
+  arrange(desc(tf_idf))
+
+
+text_genre_tf_idf = text_tf_idf %>%
+  left_join(data_pop_rock_labels)
+
+
+
+
+```
+
+We show the 25 most common words. 
+```{r}
+# TFIDF topwords
+text_genre_tidy_rock= text_genre_tf_idf %>%
+  filter(genre == "Rock")%>%
+count(word, wt = tf_idf, sort = TRUE) %>% #remove
+head(25)
+
+
+text_genre_tidy_rock_pop= text_genre_tf_idf %>%
+  filter(genre == "pop/rock")%>%
+count(word, wt = tf_idf, sort = TRUE) %>% #remove
+head(25)
+
+text_genre_tidy_pop= text_genre_tf_idf %>%
+  filter(genre == "Pop")%>%
+count(word, wt = tf_idf, sort = TRUE) %>% #remove
+head(25)
+
+```
+
+```{r}
+labels_words <- text_genre_tf_idf %>%
+group_by(genre) %>%
+count(word, wt = tf_idf, sort = TRUE, name = "tf_idf") %>%
+dplyr::slice(1:20) %>% #slice
+ungroup()
+
+```
+
+```{r}
+labels_words %>%
+mutate(word = reorder_within(word, by = tf_idf, within = genre)) %>% #Pop & Rock
+ggplot(aes(x = word, y = tf_idf, fill = genre)) +
+geom_col(show.legend = FALSE) +
+labs(x = NULL, y = "tf-idf") +
+facet_wrap(~genre, ncol = 2, scales = "free") +
+coord_flip() +
+scale_x_reordered() +
+theme(axis.text.y = element_text(size = 6))
+
+```
+
+##Rock wordcloud
+
+EDA within the Pop and Rock genres. 
+```{r}
+text_tidy_rock = text_genre_tidy %>%
+  filter(genre == "Rock")
+```
+
+```{r}
+library(wordcloud)
+```
+
+```{r}
+text_tidy_rock %>%
+count(word) %>%
+with(wordcloud(word, n,
+max.words = 50,
+color = "blue"))
+
+```
+
+##Pop wordcloud
+
+EDA within the Pop and Rock genres. 
+```{r}
+text_tidy_Pop = text_genre_tidy %>%
+filter(genre == "Pop")
+
+```
+
+```{r}
+text_tidy_Pop %>%
+count(word) %>%
+with(wordcloud(word, n,
+max.words = 50,
+color = "blue"))
+
+```
+
+##Pop/Rock wordcloud
+```{r}
+text_tidy_Pop_Rock = text_genre_tidy %>%
+filter(genre == "pop/rock")
+
+```
+
+```{r}
+text_tidy_Pop_Rock %>%
+count(word) %>%
+with(wordcloud(word, n,
+max.words = 50,
+color = "blue"))
+
+```
+
+
+#Sentiment Analysis
+
+## Rock_Pop
+
+We do a sentiment analysis based on the Pop genre.
+```{r}
+library(textdata)
+
+text_tidy_Pop_Rock_index= text_tidy_Pop_Rock %>%
+mutate(index= 1:n())
+
+```
+
+We use the lexicons “bing” and “afinn” to get a measure for positivity and negativity for each word.
+We use inner_join to only get the words we use from the lexicon.
+```{r}
+#Bing
+sentiment_bing <- text_tidy_Pop_Rock_index %>%
+inner_join(get_sentiments("bing")) %>%
+count(word, index = index %/% 100, sentiment) %>%
+mutate(lexicon = 'Bing')
+
+```
+
+```{r}
+# Afinn
+sentiment_afinn <- text_tidy_Pop_Rock_index %>%
+inner_join(get_sentiments("afinn")) %>%
+group_by(index = index %/% 100) %>%
+summarise(sentiment = sum(value, na.rm = TRUE)) %>%
+mutate(lexicon = 'AFINN')
+
+```
+
+We join the measures from both lexicons. 
+```{r}
+# Lets join them all together for plotting
+sentiment_all <- sentiment_afinn %>%
+bind_rows(sentiment_bing %>%
+pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>%
+mutate(sentiment = positive - negative) %>%
+select(index, sentiment, lexicon))
+
+```
+
+We create a plot for the distribution between negative and positive words within the data genre.
+```{r}
+sentiment_all %>%
+ggplot(aes(x = index, y = sentiment, fill = lexicon)) +
+geom_col(show.legend = FALSE) +
+facet_wrap(~ lexicon) +
+labs(title = "Sentiment Analysis: “Pop",
+subtitle = 'Using the Bing, AFINN lexicon')
+
+```
+
+#Senteminet wordcloud
+
+We can now create a wordcloud looking at the positive and negative words in the Pop genre.
+```{r}
+text_tidy_Pop_Rock %>%
+inner_join(get_sentiments("bing")) %>%
+count(word, sentiment, sort = TRUE) %>%
+filter(sentiment %in% c("positive", "negative")) %>%
+pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>%
+as.data.frame() %>%
+remove_rownames() %>%
+column_to_rownames("word") %>%
+comparison.cloud(colors = c("darkgreen", "red"),
+max.words = 100,
+title.size = 1.5)
+
+```
+
+
+
+
+
+
+
