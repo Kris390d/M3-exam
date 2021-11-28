@@ -240,7 +240,7 @@ We set some of the parameters for tuning.
 model_lg <- logistic_reg(mode = 'classification', penalty = tune(), mixture = 0.5) %>%
   set_engine('glm', family = binomial) 
 
-model_lg <- logistic_reg(penalty = tune(), mixture = 0.5) %>% #ændret fra 1 til 0.5 da vi brugte dette en anden gang 
+#model_lg <- logistic_reg(penalty = tune(), mixture = 0.5) %>% #ændret fra 1 til 0.5 da vi brugte dette en anden gang 
   set_engine("glmnet") %>% #, family = binomial
   set_mode("classification")
 ```
