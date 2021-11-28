@@ -6,8 +6,51 @@ output: pdf_document
 ---
 
 ```{r}
-library(readr)
 library(tidyverse)
+
+library(lubridate)
+
+library(magrittr)
+
+library(FactoMineR)
+
+library(factoextra)
+
+library(uwot)
+
+library(GGally)
+
+library(rsample)
+
+library(ggridges)
+
+library(xgboost)
+
+library(recipes)
+
+library(parsnip)
+
+library(glmnet)
+
+library(tidymodels)
+
+library(skimr)
+
+library(VIM)
+
+library(visdat)
+
+library(ggmap)
+
+library(ranger)
+
+library(vip)
+
+library(SnowballC)
+
+library(tokenizers)
+
+library(formatR)
 
 data_start <- read_csv("/Users/Kristoffer/Desktop/lyrics.csv") #Kristoffer
 artists_data <- read_csv("/Users/Kristoffer/Desktop/artists-data.csv") #Ikke Kristoffer
@@ -143,6 +186,7 @@ We now want to create a multiclass supervised machinelearning model to predict w
 
 First we look for missing values. 
 ```{r}
+library(visdat)
 vis_dat(data_bing)
 ```
 
@@ -150,7 +194,8 @@ We remove NA's and look at the distribution between the four classes.
 ```{r}
 data_bing %<>%
   drop_na() %>%
-  rename(y = label) 
+  rename(y = label) %>%
+  select(-name)
 
 data_bing$y <- as.factor(data_bing$y)
 
@@ -176,6 +221,7 @@ glove6b <- embedding_glove6b(dimensions = 100)
 We create a training and test dataset using strata=y to get the same ratio between the classes in both the training and test dataset.  
 
 ```{r}
+library(rsample)
 set.seed(19)
 
 tidy_split <- initial_split(data_bing, strata = y)
@@ -237,12 +283,13 @@ We set some of the parameters for tuning.
 ### Logistic model
 
 ```{r}
-model_lg <- logistic_reg(mode = 'classification', penalty = tune(), mixture = 0.5) %>%
+#model_lg <- logistic_reg(mode = 'classification', penalty = tune(), mixture = 0.5) %>%
+  #set_engine('glm', family = binomial) 
+model_lg <- logistic_reg(mode = 'classification') %>%
   set_engine('glm', family = binomial) 
-
 #model_lg <- logistic_reg(penalty = tune(), mixture = 0.5) %>% #ændret fra 1 til 0.5 da vi brugte dette en anden gang 
-  set_engine("glmnet") %>% #, family = binomial
-  set_mode("classification")
+  #set_engine("glmnet") %>% #, family = binomial
+  #set_mode("classification")
 ```
 
 ### KNN model
@@ -333,8 +380,10 @@ k_folds_data <- train_data %>%
 
 We define the grids we want to use for the hypertuning 
 ```{r}
-logistic_grid <- grid_regular(parameters(model_lg), levels = 1)
-knn_grid <- grid_regular(parameters(model_knn), levels = 5, filter = c(neighbors > 1))
+logistic_grid <- grid_regular(parameters(model_lg), levels = 3)
+logistic_grid <- 5
+# knn_grid <- grid_regular(parameters(model_knn), levels = 5, filter = c(neighbors > 1))
+knn_grid <- 5
 ```
 The level defines the amount of parameters that should be considered. 
 
@@ -407,7 +456,7 @@ linear_tf_res <- tune_grid(
   metrics = model_metrics,
   resamples = k_folds_data
 )
-
+devtools::install_github("tidymodels/tune")
 
 knn_tf_res <- tune_grid(
   model_knn,
