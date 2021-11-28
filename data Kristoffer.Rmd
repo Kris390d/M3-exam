@@ -287,9 +287,7 @@ We set some of the parameters for tuning.
   #set_engine('glm', family = binomial) 
 model_lg <- logistic_reg(mode = 'classification') %>%
   set_engine('glm', family = binomial)
-#model_lg <- logistic_reg(penalty = tune(), mixture = 0.5) %>% #ændret fra 1 til 0.5 da vi brugte dette en anden gang 
-  #set_engine("glmnet") %>% #, family = binomial
-  #set_mode("classification")
+
 ```
 
 ### KNN model
@@ -310,6 +308,17 @@ model_rf <-
   set_mode("classification")
 ```
 
+
+### Decision tree
+```{r}
+model_dt <- decision_tree(mode = 'classification',
+                          cost_complexity = tune(),
+                          tree_depth = tune(), 
+                          min_n = tune()
+                          ) %>%
+  set_engine('rpart') 
+```
+
 ## Workflow 
 
 We create workflows for each recipe. 
@@ -328,6 +337,9 @@ workflow_knn_tf <- workflow_general_tf %>%
 
 workflow_rf_tf <- workflow_general_tf %>%
   add_model(model_rf)
+
+workflow_dt_tf <- workflow_general_tf %>%
+  add_model(model_dt)
 ```
 
 
@@ -345,6 +357,9 @@ workflow_knn_emb <- workflow_general_emb %>%
 
 workflow_rf_emb <- workflow_general_emb %>%
   add_model(model_rf)
+
+workflow_dt_emb <- workflow_general_emb %>%
+  add_model(model_dt)
 ```
 
 
@@ -362,6 +377,9 @@ workflow_knn_hash <- workflow_general_hash %>%
 
 workflow_rf_hash <- workflow_general_hash %>%
   add_model(model_rf)
+
+workflow_dt_hash <- workflow_general_hash %>%
+  add_model(model_dt)
 ```
 
 ## Hyper tuneing 
@@ -380,10 +398,13 @@ k_folds_data <- train_data %>%
 
 We define the grids we want to use for the hypertuning 
 ```{r}
-logistic_grid <- grid_regular(parameters(model_lg), levels = 3)
+#logistic_grid <- grid_regular(parameters(model_lg), levels = 3)
 logistic_grid <- 5
 # knn_grid <- grid_regular(parameters(model_knn), levels = 5, filter = c(neighbors > 1))
 knn_grid <- 5
+
+dt_grid <- 5
+
 ```
 The level defines the amount of parameters that should be considered. 
 
@@ -420,6 +441,15 @@ knn_hash_res <- tune_grid(
   metrics = model_metrics,
   resamples = k_folds_data
 )
+
+dt_hash_res <- tune_grid(
+  model_dt,
+  hash_rec,
+  grid = dt_grid,
+  control = model_control,
+  metrics = model_metrics,
+  resamples = k_folds_data
+)
 ```
 
 
@@ -443,6 +473,15 @@ knn_embed_res <- tune_grid(
   metrics = model_metrics,
   resamples = k_folds_data
 )
+
+dt_embed_res <- tune_grid(
+  model_dt,
+  embeddings_rec,
+  grid = dt_grid,
+  control = model_control,
+  metrics = model_metrics,
+  resamples = k_folds_data
+)
 ```
 
 
@@ -456,12 +495,20 @@ linear_tf_res <- tune_grid(
   metrics = model_metrics,
   resamples = k_folds_data
 )
-devtools::install_github("tidymodels/tune")
 
 knn_tf_res <- tune_grid(
   model_knn,
   tf_idf_rec,
   grid = knn_grid,
+  control = model_control,
+  metrics = model_metrics,
+  resamples = k_folds_data
+)
+
+dt_tf_res <- tune_grid(
+  model_dt,
+  tf_idf_rec,
+  grid = dt_grid,
   control = model_control,
   metrics = model_metrics,
   resamples = k_folds_data
@@ -476,6 +523,7 @@ We look at the different optimizations and choose the best parameters.
 
 #### linear_embed_res
 
+Denne virker ikke, da hypertuning ikke virker til log reg
 ```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
 linear_hash_res %>% autoplot()
 ```
@@ -484,6 +532,8 @@ linear_hash_res %>% autoplot()
 best_param_linear_hash_res <- linear_hash_res %>% select_best(metric = 'accuracy')
 best_param_linear_hash_res
 ```
+
+
 #### knn_embed_res
 
 ```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
@@ -494,6 +544,17 @@ knn_hash_res %>% autoplot()
 best_param_knn_hash_res <- knn_hash_res %>% select_best(metric = 'accuracy')
 best_param_knn_hash_res
 ```
+
+#### decision tree hash
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+dt_hash_res %>% autoplot()
+```
+
+```{r}
+best_param_dt_hash_res <- dt_hash_res %>% select_best(metric = 'accuracy')
+best_param_dt_hash_res
+```
+
 
 #### linear_embed_res
 
@@ -514,6 +575,17 @@ knn_embed_res %>% autoplot()
 ```{r}
 best_param_knn_embed_res <- knn_embed_res %>% select_best(metric = 'accuracy')
 best_param_knn_embed_res
+```
+
+#### dt_embed_res
+
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+dt_embed_res %>% autoplot()
+```
+
+```{r}
+best_param_dt_embed_res <- dt_embed_res %>% select_best(metric = 'accuracy')
+best_param_dt_embed_res
 ```
 
 #### linear_tf_res
@@ -538,6 +610,18 @@ best_param_knn_tf_res <- knn_tf_res %>% select_best(metric = 'accuracy')
 best_param_knn_tf_res
 ```
 
+#### dt_tf_res
+
+```{r, tidy=TRUE, tidy.opts=list(width.cutoff=60)}
+dt_tf_res %>% autoplot()
+```
+
+```{r}
+best_param_dt_tf_res <- dt_tf_res %>% select_best(metric = 'accuracy')
+best_param_dt_tf_res
+```
+
+
 ## Finalize workflows
 
 We now fit the best parameters into the workflow of the two models that needed hypertuning. 
@@ -550,6 +634,9 @@ workflow_final_lg_hash <- workflow_lg_hash %>%
 
 workflow_final_knn_hash <- workflow_knn_hash %>%
   finalize_workflow(parameters = best_param_knn_hash_res)
+
+workflow_final_dt_hash <- workflow_dt_hash %>%
+  finalize_workflow(parameters = best_param_dt_hash_res)
 ```
 
 
@@ -561,6 +648,9 @@ workflow_final_lg_tf <- workflow_lg_tf %>%
 
 workflow_final_knn_tf <- workflow_knn_tf %>%
   finalize_workflow(parameters = best_param_knn_tf_res)
+
+workflow_final_dt_tf <- workflow_dt_tf %>%
+  finalize_workflow(parameters = best_param_dt_tf_res)
 ```
 
 
@@ -572,6 +662,9 @@ workflow_final_lg_emb <- workflow_lg_emb %>%
 
 workflow_final_knn_emb <- workflow_knn_emb %>%
   finalize_workflow(parameters = best_param_knn_embed_res)
+
+workflow_final_dt_emb <- workflow_dt_emb %>%
+  finalize_workflow(parameters = best_param_dt_embed_res)
 ```
 
 
@@ -767,7 +860,67 @@ rf_res_emb <-
 rf_res_emb %>% collect_metrics(summarize = TRUE)
 
 ```
+### Decision tree
 
+
+#### hash
+
+```{r}
+
+dt_res_hash <- 
+  workflow_final_dt_hash %>% 
+  fit_resamples(
+    resamples = k_folds_data, 
+    metrics = metric_set(
+      recall, precision, f_meas, 
+      accuracy, kap,
+      roc_auc, sens, spec),
+    control = control_resamples(
+      save_pred = TRUE)
+    ) 
+
+dt_res_hash %>% collect_metrics(summarize = TRUE)
+
+```
+
+#### Tf_idf
+
+```{r}
+
+dt_res_tf <- 
+  workflow_final_dt_tf %>% 
+  fit_resamples(
+    resamples = k_folds_data, 
+    metrics = metric_set(
+      recall, precision, f_meas, 
+      accuracy, kap,
+      roc_auc, sens, spec),
+    control = control_resamples(
+      save_pred = TRUE)
+    ) 
+
+dt_res_tf %>% collect_metrics(summarize = TRUE)
+
+```
+#### Embeding
+
+```{r}
+
+dt_res_emb <- 
+  workflow_final_dt_emb %>% 
+  fit_resamples(
+    resamples = k_folds_data, 
+    metrics = metric_set(
+      recall, precision, f_meas, 
+      accuracy, kap,
+      roc_auc, sens, spec),
+    control = control_resamples(
+      save_pred = TRUE)
+    ) 
+
+dt_res_emb %>% collect_metrics(summarize = TRUE)
+
+```
 
 ## Compare performance
 
@@ -819,6 +972,21 @@ knn_metrics_hash <-
   collect_metrics(summarise = TRUE) %>%
   mutate(model = "Knn Hash")
 
+dt_metrics_tf <- 
+  dt_res_tf %>% 
+  collect_metrics(summarise = TRUE) %>%
+  mutate(model = "DT TF-idf")
+
+dt_metrics_emb <- 
+  dt_res_emb %>% 
+  collect_metrics(summarise = TRUE) %>%
+  mutate(model = "DT Embeding")
+
+dt_metrics_hash <- 
+  dt_res_hash %>% 
+  collect_metrics(summarise = TRUE) %>%
+  mutate(model = "DT Hash")
+
 ```
 
 ```{r}
@@ -831,7 +999,10 @@ model_compare <- bind_rows(
                           rf_metrics_hash,
                           knn_metrics_tf,
                           knn_metrics_emb,
-                          knn_metrics_hash
+                          knn_metrics_hash,
+                          dt_metrics_tf,
+                          dt_metrics_emb,
+                          dt_metrics_hash
                            ) 
 
 
@@ -840,6 +1011,9 @@ model_comp <-
   select(model, .metric, mean, std_err) %>% 
   pivot_wider(names_from = .metric, values_from = c(mean, std_err)) 
 
+library(RColorBrewer)
+nb.cols <- 12
+mycolors <- colorRampPalette(brewer.pal(8, "Set2"))(nb.cols)
 
 model_comp %>% 
   arrange(mean_f_meas) %>% 
@@ -847,7 +1021,8 @@ model_comp %>%
   ggplot(aes(model, mean_f_meas, fill=model)) +
   geom_col() +
   coord_flip() +
-  scale_fill_brewer(palette = "Blues") +
+  scale_fill_manual(values = mycolors) +
+  #scale_fill_brewer(palette = "Blues") +
    geom_text(
      size = 3,
      aes(label = round(mean_f_meas, 2), y = mean_f_meas + 0.08),
@@ -862,16 +1037,14 @@ model_comp %>%
   ggplot(aes(model, mean_roc_auc, fill=model)) +
   geom_col() +
   coord_flip() +
-  scale_fill_brewer(palette = "Blues") + 
+  scale_fill_manual(values = mycolors) +
+  #scale_fill_brewer(palette = "Blues") + 
      geom_text(
      size = 3,
      aes(label = round(mean_roc_auc, 2), y = mean_roc_auc + 0.08),
      vjust = 1
   )
 ```
-
-
-
 
 ## Choose model
 
