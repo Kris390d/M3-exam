@@ -286,7 +286,7 @@ We set some of the parameters for tuning.
 #model_lg <- logistic_reg(mode = 'classification', penalty = tune(), mixture = 0.5) %>%
   #set_engine('glm', family = binomial) 
 model_lg <- logistic_reg(mode = 'classification') %>%
-  set_engine('glm', family = binomial) 
+  set_engine('glm', family = binomial)
 #model_lg <- logistic_reg(penalty = tune(), mixture = 0.5) %>% #ændret fra 1 til 0.5 da vi brugte dette en anden gang 
   #set_engine("glmnet") %>% #, family = binomial
   #set_mode("classification")
@@ -875,56 +875,19 @@ model_comp %>%
 
 ## Choose model
 
-The best model seems to be Random Forest using TF-idf we also look at the second best model which is the Logistic Regression model using TF-idf
+The best model seems to be Random Forest using TF-idf we also look at the second best model which is random forest using hash.
 
 So we only continue with the two best ones. 
 
 
-### Log-reg model
+### Random forest model with TF IDF
 
 #### Performance metrics
 Show average performance over all folds: 
 
 ```{r}
-log_res_tf %>%  collect_metrics(summarize = TRUE)
+rf_res_tf %>%  collect_metrics(summarize = TRUE)
 ```
-#### Collect model predictions
-To obtain the actual model predictions, we use the function collect_predictions and save the result as log_pred:
-
-```{r}
-log_pred_tf <- 
-  log_res_tf %>%
-  collect_predictions()
-```
-
-#### Confusion Matrix
-
-We can now use our collected predictions to make a confusion matrix
-```{r}
-log_pred_tf %>% 
-  conf_mat(y, .pred_class) 
-```
-
-```{r}
-log_pred_tf %>% 
-  conf_mat(y, .pred_class) %>% 
-  autoplot(type = "heatmap")
-```
-We can see the model does okay predicting the correct genres. 
-
-#### ROC curve
-
-We will now create the ROC curve with 1 - specificity on the x-axis (false positive fraction = FP/(FP+TN)) and sensitivity on the y axis (true positive fraction = TP/(TP+FN)). 
-```{r}
-log_pred_tf %>% 
-  roc_curve(y, .pred_Comedy:.pred_Thriller) %>% 
-  autoplot()
-```
-
-
-
-### Random forest model
-
 #### Collect model predictions
 To obtain the actual model predictions, we use the function collect_predictions and save the result as log_pred:
 
@@ -934,14 +897,6 @@ rf_pred_tf <-
   collect_predictions()
 ```
 
-#### Performance metrics
-Show average performance over all folds (note that we use log_res):
-
-```{r}
-rf_res_tf %>%  collect_metrics(summarize = TRUE)
-```
-
-
 #### Confusion Matrix
 
 We can now use our collected predictions to make a confusion matrix
@@ -950,9 +905,54 @@ rf_pred_tf %>%
   conf_mat(y, .pred_class) 
 ```
 
-
 ```{r}
 rf_pred_tf %>% 
+  conf_mat(y, .pred_class) %>% 
+  autoplot(type = "heatmap")
+```
+We can see the model does okay predicting the correct genres. 
+
+#### ROC curve
+
+We will now create the ROC curve with 1 - specificity on the x-axis (false positive fraction = FP/(FP+TN)) and sensitivity on the y axis (true positive fraction = TP/(TP+FN)). 
+```{r}
+rf_pred_tf %>% 
+  roc_curve(y,.pred_0) %>% 
+  autoplot()
+```
+
+
+
+### Random forest model hash
+
+#### Collect model predictions
+To obtain the actual model predictions, we use the function collect_predictions and save the result as log_pred:
+
+```{r}
+rf_pred_hash <- 
+  rf_res_hash %>%
+  collect_predictions()
+```
+
+#### Performance metrics
+Show average performance over all folds (note that we use log_res):
+
+```{r}
+rf_res_hash %>%  collect_metrics(summarize = TRUE)
+```
+
+
+#### Confusion Matrix
+
+We can now use our collected predictions to make a confusion matrix
+```{r}
+rf_pred_hash %>% 
+  conf_mat(y, .pred_class) 
+```
+
+
+```{r}
+rf_pred_hash %>% 
   conf_mat(y, .pred_class) %>% 
   autoplot(type = "heatmap")
 ```
@@ -962,8 +962,8 @@ rf_pred_tf %>%
 
 We will now create the ROC curve with 1 - specificity on the x-axis (false positive fraction = FP/(FP+TN)) and sensitivity on the y axis (true positive fraction = TP/(TP+FN)). 
 ```{r}
-rf_pred_tf %>% 
-  roc_curve(y, .pred_Comedy:.pred_Thriller) %>% 
+rf_pred_hash %>% 
+  roc_curve(y, .pred_0) %>% 
   autoplot()
 ```
 
@@ -971,7 +971,7 @@ rf_pred_tf %>%
 
 We now want to look at how the two models perform on test data. 
 
-### Random forest model
+### Random forest model TF IDF
 
 ```{r}
 last_fit_rf <- last_fit(workflow_rf_tf, 
@@ -989,7 +989,7 @@ last_fit_rf %>%
   collect_metrics()
 ```
 
-WWe can again make a confusinmatrix on the testdata predictions
+We can again make a confusion matrix on the test data predictions
 
 ```{r}
 last_fit_rf %>%
@@ -1002,14 +1002,14 @@ last_fit_rf %>%
 ```{r}
 last_fit_rf %>% 
   collect_predictions() %>% 
-  roc_curve(y, .pred_Comedy:.pred_Thriller) %>% 
+  roc_curve(y, .pred_0) %>% 
   autoplot()
 ```
 
-### Logistic model
+### Random forest hash
 
 ```{r}
-last_fit_log <- last_fit(workflow_final_lg_tf, 
+last_fit_rf_hash <- last_fit(workflow_rf_hash, 
                         split = tidy_split,
                         metrics = metric_set(
                           recall, precision, f_meas, 
@@ -1020,12 +1020,12 @@ last_fit_log <- last_fit(workflow_final_lg_tf,
 
 
 ```{r}
-last_fit_log %>% 
+last_fit_rf_hash %>% 
   collect_metrics()
 ```
 
 ```{r}
-last_fit_log %>%
+last_fit_rf_hash %>%
   collect_predictions() %>% 
   conf_mat(y, .pred_class) %>% 
   autoplot(type = "heatmap")
@@ -1033,9 +1033,9 @@ last_fit_log %>%
 ```
 
 ```{r}
-last_fit_log %>% 
+last_fit_rf_hash %>% 
   collect_predictions() %>% 
-  roc_curve(y, .pred_Comedy:.pred_Thriller) %>% 
+  roc_curve(y, .pred_0) %>% 
   autoplot()
 ```
 
