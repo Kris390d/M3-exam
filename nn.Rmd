@@ -17,7 +17,7 @@ artists_data <- read_csv("C:/Users/andre/Downloads/artists-data.csv")
 
 ```
 
-
+Making the artist data ready for import
 ```{r}
 artists = artists_data %>% 
   group_by(Artist) %>% 
@@ -31,6 +31,7 @@ artists = artists_data %>%
 ```
 
 
+Combining the data and only keeping a column with the lyrics and a combined band nam song name column.
 ```{r}
 glimpse(data_start)
 
@@ -55,6 +56,7 @@ data %>%
 
 # Make labels 
 
+Our data set didnt contain labels so we made them ourselves by first tokenizing
 ```{r}
 library(tidytext)
 text_tidy = data %>% unnest_tokens(word, text, token = "words")
@@ -62,6 +64,7 @@ text_tidy = data %>% unnest_tokens(word, text, token = "words")
 head(text_tidy)
 ```
 
+We remove stopwords and words less than two words.
 ```{r}
 text_tidy %<>%
   filter(str_length(word) > 2 ) %>% 
@@ -70,6 +73,7 @@ text_tidy %<>%
   anti_join(stop_words, by = 'word') 
 ```
 
+Then we stem our words.
 ```{r}
 library(hunspell)
 text_tidy %>%
@@ -88,6 +92,7 @@ text_tidy %<>%
 
 ```
 
+Then we take the 10000 top words, but our data set after preprocessing only contains 8047 words so we move forward with them
 ```{r}
 top_10000_words=text_tidy %>%
   count(word,sort = T) %>%
@@ -100,6 +105,8 @@ data_top_10000=top_10000_words %>%
 ```
 
 # Bing
+
+Then we make our sentiment labels using the bing dictionary by giving every word a sentiment of either 0 for negative or 1 for positive and then we group by song and summarise the sentiment of every word in a song to get the mean, which then becomes the label of the song.
 ```{r}
 sentiment_bing= data_top_10000 %>%
   inner_join(get_sentiments("bing")) %>%
@@ -114,6 +121,7 @@ sentiment_bing %<>%
 
 # Afinn
 
+We have also made labels for the data using the Afinn dictionary, which give the words a value from -5 to 5 so the words can noow also be very positive or negative. Then we do the same and find the mean of every song to get the labels.
 ```{r}
 sentiment_afinn= data_top_10000 %>%
   inner_join(get_sentiments("afinn")) 
@@ -140,6 +148,7 @@ data_afinn= sentiment_afinn %>%
 
 # Neural Network Bing
 
+Using our bing data set
 ```{r}
 data_bing_n= data_bing %>%
   rename( y = label )
@@ -166,12 +175,12 @@ x_test_data= test_data %>% pull(text)
 y_test_data= test_data %>% pull(y)
 ```
 
-Now it is time to load keras and make some adjustments to the data. The data are tweets so a lot of special characters are removed like # and @'s. And then we tokenize our data as we know from basic machine learning to get like a bag of words from our song lyrics and lastly we create a list where every song has a vector which includes the words as a numerical character if the words contained in the tweets are among the 100000 most used words in the dataset.
+Now it is time to load keras and make some adjustments to the data. The data are tweets so a lot of special characters are removed like # and @'s. And then we tokenize our data as we know from basic machine learning to get like a bag of words from our song lyrics and lastly we create a list where every song has a vector which includes the words as a numerical character if the words contained in the tweets are among the 100000 most used words in the data set.
 ```{r}
 library(keras)
 
 #for training data
-tokenizer_train <- text_tokenizer(num_words = 100000,
+tokenizer_train <- text_tokenizer(num_words = 5000,
                                   filters = "!\"#$%&()*+,-./:;<=>?@[\\]^_`{|}~\t\n" ) %>%
   fit_text_tokenizer(x_train_data)
 
@@ -180,7 +189,7 @@ sequences_train = texts_to_sequences(tokenizer_train, x_train_data)
 
 #For test data
 
-tokenizer_test <- text_tokenizer(num_words = 100000,
+tokenizer_test <- text_tokenizer(num_words = 5000,
                                  filters = "!\"#$%&()*+,-./:;<=>?@[\\]^_`{|}~\t\n" ) %>%
   fit_text_tokenizer(x_test_data)
 
@@ -206,8 +215,8 @@ vectorize_sequences <- function(sequences, dimension) {
 we use it on the training and test data
 
 ```{r}
-x_train <- sequences_train %>% vectorize_sequences(dimension = 100000) 
-x_test <- sequences_test %>% vectorize_sequences(dimension = 100000) 
+x_train <- sequences_train %>% vectorize_sequences(dimension = 5000) 
+x_test <- sequences_test %>% vectorize_sequences(dimension = 5000) 
 
 str(x_train[1,])
 ```
@@ -220,9 +229,9 @@ The above data is then used in our baseline model with an input shape of 100000 
 model_keras <- keras_model_sequential()
 
 model <- model_keras %>%
-  layer_dense(units = 32, activation = "relu", input_shape = c(100000)) %>%
+  layer_dense(units = 16, activation = "relu", input_shape = c(5000)) %>%
   layer_dropout(rate = 0.1) %>% 
-  layer_dense(units = 32, activation = "relu") %>%
+  layer_dense(units = 16, activation = "relu") %>%
   layer_dropout(rate = 0.1) %>% 
   layer_dense(units = 1, activation = "sigmoid")
 ```
@@ -240,13 +249,14 @@ Here the structure of the model can be viewed
 ```{r}
 summary(model)
 ```
-And now the model is run 10 times with a batch size of 512
+And now the model is run 10 times with a batch size of 256
 ```{r}
+set.seed(12345)
 history_ann <- model %>% fit(
   x_train,
   y_train_data,
   epochs = 10,
-  batch_size = 512,
+  batch_size = 256,
   validation_split = 0.25
 )
 ```
@@ -254,6 +264,8 @@ history_ann <- model %>% fit(
 ```{r}
 plot(history_ann)
 ```
+The plot shows a better and better accuracy the more epoch we train the model
+
 
 ## Rnn model with paded data
 ### Padding
@@ -282,8 +294,8 @@ setting up the model we will first use a layer_embedding to compress our initial
 model_keras2 <- keras_model_sequential()
 
 model_rnn <- model_keras2 %>%
-  layer_embedding(input_dim = 100000, output_dim = 32) %>%
-  layer_simple_rnn(units = 32, activation = "tanh") %>%
+  layer_embedding(input_dim = 5000, output_dim = 16) %>%
+  layer_simple_rnn(units = 16, activation = "tanh") %>%
   layer_dense(units = 1, activation = "sigmoid")
 ```
 
@@ -303,10 +315,11 @@ model_rnn %>% compile(
 
 
 ```{r}
+set.seed(12345)
 history_rnn <- model_rnn %>% fit(
   x_train_pad, y_train_data,
   epochs = 10,
-  batch_size = 128,
+  batch_size = 516,
   validation_split = 0.25
 )
 ```
