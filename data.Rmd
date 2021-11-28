@@ -117,7 +117,7 @@ We show the 25 most common words.
 ```{r}
 # TFIDF topwords
 text_genre_tidy %>%
-count(word, wt = tf_idf, sort = TRUE) %>%
+count(word, wt = tf_idf, sort = TRUE) %>% #remove
 head(25)
 
 ```
@@ -240,7 +240,7 @@ subtitle = 'Using the Bing, AFINN lexicon')
 
 #Senteminet wordcloud
 
-We can now create a wordcloud looking at the positive and negative words in the Drama genre.
+We can now create a wordcloud looking at the positive and negative words in the Pop genre.
 ```{r}
 text_tidy_Pop %>%
 inner_join(get_sentiments("bing")) %>%
