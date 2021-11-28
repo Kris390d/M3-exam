@@ -86,7 +86,7 @@ text_genre_tidy %<>%
   anti_join(stop_words, by = 'word') 
 ```
 
-Stemming: We use the hunspell package which seems to produce the best stemming for our data. Reducing a word to its “root” word. 
+We use the hunspell package, which seems to produce the best stemming for our data. Reducing a word to its “root” word. 
 ```{r}
 library(hunspell)
 text_genre_tidy %>%
@@ -102,7 +102,7 @@ text_genre_tidy %<>%
 
 ```
 
-We weight the data using tf-idf. (Term-frequency Inverse document frequency)
+We weight the data using tf-idf (Term-frequency Inverse document frequency). 
 ```{r}
 # TFIDF weights
 text_genre_tidy %<>%
@@ -113,7 +113,7 @@ n = n)
 
 ```
 
-We show the 25 most common words
+We show the 25 most common words. 
 ```{r}
 # TFIDF topwords
 text_genre_tidy %>%
@@ -126,14 +126,14 @@ head(25)
 labels_words <- text_genre_tidy %>%
 group_by(Pop, Rock) %>%
 count(word, wt = tf_idf, sort = TRUE, name = "tf_idf") %>%
-dplyr::slice(1:12) %>%
+dplyr::slice(1:12) %>% #slice
 ungroup()
 
 ```
 
 ```{r}
 labels_words %>%
-mutate(word = reorder_within(word, by = tf_idf, within = Pop)) %>%
+mutate(word = reorder_within(word, by = tf_idf, within = Pop)) %>% #Pop & Rock
 ggplot(aes(x = word, y = tf_idf, fill = Pop)) +
 geom_col(show.legend = FALSE) +
 labs(x = NULL, y = "tf-idf") +
