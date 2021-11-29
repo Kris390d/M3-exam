@@ -181,7 +181,7 @@ data_afinn= sentiment_afinn %>%
 
 # Machine learning model
 
-We now want to create a multiclass supervised machinelearning model to predict which genre a movie is in, based on its description. 
+We now want to create a multiclass supervised machinelearning model to predict the sentiment of a song based on its lyrics.
 
 
 First we look for missing values. 
@@ -190,7 +190,7 @@ library(visdat)
 vis_dat(data_bing)
 ```
 
-We remove NA's and look at the distribution between the four classes.
+We remove NA's and look at the distribution between the two classes.
 ```{r}
 data_bing %<>%
   drop_na() %>%
@@ -204,9 +204,9 @@ data_bing %>%
   ggplot(aes(x = y, y = n)) + 
   geom_col()
 ```
-We can see that Drama is much more represented than Thriller, so we have to do some down or upsampling. 
+We can see that negative sentiment is much more represented than positive sentiment, so we have to do some down or upsampling. 
 
-We will create three different recipies one using embedding, one using tf-idf and one using Hash.
+We will create three different receipes: one using embedding, one using tf-idf and one using Hash.
 
 So we load the embeddings using the "textdata" package.
 
@@ -291,7 +291,6 @@ model_lg <- logistic_reg(mode = 'classification') %>%
 ```
 
 ### KNN model
-Håber ikke den er multiclass
 ```{r}
 model_knn <- nearest_neighbor(neighbors = tune()) %>% 
   set_engine("kknn") %>% 
@@ -302,7 +301,7 @@ model_knn <- nearest_neighbor(neighbors = tune()) %>%
 ### Random Forrest
 ```{r}
 model_rf <- 
-  rand_forest(trees = 500, mtry = tune(), min_n = 10) %>% 
+  rand_forest(trees = NULL, mtry = NULL, min_n = NULL) %>% 
   set_engine("ranger", importance = "impurity") %>% 
   set_mode("classification")
 ```
@@ -404,7 +403,7 @@ knn_grid <- 5
 
 dt_grid <- 5
 
-rf_grid <- 3
+rf_grid <- 5
 ```
 The level defines the amount of parameters that should be considered. 
 
@@ -694,8 +693,8 @@ workflow_final_lg_hash <- workflow_lg_hash %>%
 workflow_final_knn_hash <- workflow_knn_hash %>%
   finalize_workflow(parameters = best_param_knn_hash_res)
 
-workflow_final_rf_hash <- workflow_rf_hash %>%
-  finalize_workflow(parameters = best_param_rf_hash_res)
+#workflow_final_rf_hash <- workflow_rf_hash %>%
+ # finalize_workflow(parameters = best_param_rf_hash_res)
 
 workflow_final_dt_hash <- workflow_dt_hash %>%
   finalize_workflow(parameters = best_param_dt_hash_res)
@@ -711,8 +710,8 @@ workflow_final_lg_tf <- workflow_lg_tf %>%
 workflow_final_knn_tf <- workflow_knn_tf %>%
   finalize_workflow(parameters = best_param_knn_tf_res)
 
-workflow_final_rf_tf <- workflow_rf_tf %>%
-  finalize_workflow(parameters = best_param_rf_tf_res)
+#workflow_final_rf_tf <- workflow_rf_tf %>%
+ # finalize_workflow(parameters = best_param_rf_tf_res)
 
 workflow_final_dt_tf <- workflow_dt_tf %>%
   finalize_workflow(parameters = best_param_dt_tf_res)
@@ -728,8 +727,8 @@ workflow_final_lg_emb <- workflow_lg_emb %>%
 workflow_final_knn_emb <- workflow_knn_emb %>%
   finalize_workflow(parameters = best_param_knn_embed_res)
 
-workflow_final_rf_emb <- workflow_rf_emb %>%
-  finalize_workflow(parameters = best_param_rf_embed_res)
+#workflow_final_rf_emb <- workflow_rf_emb %>%
+ # finalize_workflow(parameters = best_param_rf_embed_res)
 
 workflow_final_dt_emb <- workflow_dt_emb %>%
   finalize_workflow(parameters = best_param_dt_embed_res)
@@ -873,7 +872,7 @@ knn_res_emb %>% collect_metrics(summarize = TRUE)
 
 ```{r}
 rf_res_hash <- 
-  workflow_final_rf_hash %>% 
+  workflow_rf_hash %>% 
   fit_resamples(
     resamples = k_folds_data, 
     metrics = metric_set(
@@ -893,7 +892,7 @@ rf_res_hash %>% collect_metrics(summarize = TRUE)
 ```{r}
 
 rf_res_tf <- 
-  workflow_final_rf_tf %>% 
+  workflow_rf_tf %>% 
   fit_resamples(
     resamples = k_folds_data, 
     metrics = metric_set(
@@ -913,7 +912,7 @@ rf_res_tf %>% collect_metrics(summarize = TRUE)
 ```{r}
 
 rf_res_emb <- 
-  workflow_final_rf_emb %>% 
+  workflow_rf_emb %>% 
   fit_resamples(
     resamples = k_folds_data, 
     metrics = metric_set(
@@ -1129,7 +1128,7 @@ Show average performance over all folds:
 rf_res_tf %>%  collect_metrics(summarize = TRUE)
 ```
 #### Collect model predictions
-To obtain the actual model predictions, we use the function collect_predictions and save the result as log_pred:
+To obtain the actual model predictions, we use the function collect_predictions and save the result as rf_pred_tf:
 
 ```{r}
 rf_pred_tf <- 
@@ -1150,7 +1149,7 @@ rf_pred_tf %>%
   conf_mat(y, .pred_class) %>% 
   autoplot(type = "heatmap")
 ```
-We can see the model does okay predicting the correct genres. 
+We can see the model does okay predicting the correct classes. 
 
 #### ROC curve
 
@@ -1166,7 +1165,7 @@ rf_pred_tf %>%
 ### Random forest model hash
 
 #### Collect model predictions
-To obtain the actual model predictions, we use the function collect_predictions and save the result as log_pred:
+To obtain the actual model predictions, we use the function collect_predictions and save the result as rf_pred_hash:
 
 ```{r}
 rf_pred_hash <- 
@@ -1175,7 +1174,7 @@ rf_pred_hash <-
 ```
 
 #### Performance metrics
-Show average performance over all folds (note that we use log_res):
+Show average performance over all folds (note that we use rf_res):
 
 ```{r}
 rf_res_hash %>%  collect_metrics(summarize = TRUE)
