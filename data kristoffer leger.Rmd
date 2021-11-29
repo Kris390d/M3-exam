@@ -390,11 +390,18 @@ vectorize_sequences <- function(sequences, dimension = 10000) {
     results[i, sequences[[i]]] <- 1
   results
 }
-x_train <- vectorize_sequences(train_data)
-x_test <- vectorize_sequences(test_data)
+x_train <- vectorize_sequences(train_data_multi)
+x_test <- vectorize_sequences(test_data_multi)
 ```
 
 ```{r}
+to_one_hot <- function(labels, dimension = 46) {
+  results <- matrix(0, nrow = length(labels), ncol = dimension)
+  for (i in 1:length(labels))
+    results[i, labels[[i]]] <- 1
+  results
+}
+
 one_hot_train_labels <- to_one_hot(train_labels)
 one_hot_test_labels <- to_one_hot(test_labels)
 ```
@@ -428,6 +435,7 @@ y_val <- one_hot_train_labels[val_indices,]
 partial_y_train = one_hot_train_labels[-val_indices,]
 
 ```
+
 ```{r}
 history <- model %>% fit(
   partial_x_train,
@@ -459,7 +467,7 @@ model %>% compile(
 history <- model %>% fit(
   partial_x_train,
   partial_y_train,
-  epochs = 9,
+  epochs = 3,
   batch_size = 512,
   validation_data = list(x_val, y_val)
 )
@@ -471,7 +479,7 @@ results
 ```
 
 
-
+### Hans data
 ```{r}
 library(keras)
 reuters <- dataset_reuters(num_words = 10000)
