@@ -182,7 +182,13 @@ test_data5= testing(split5)
 ```{r}
 x_train_data5= train_data5 %>% pull(text)
 y_train_data5= train_data5 %>% pull(y)
+y_train_data8 = y_train_data5 %>% as.factor() %>% unlist
 y_train_data6 = y_train_data5 %>% as.factor() %>% unclass() %>% as.numeric()
+y_train_data7 = y_train_data6 %>% as.data.frame() 
+
+y_train_data7 = y_train_data7 %>% mutate(ty = y_train_data7$.) %>% mutate(index = seq(1,2494,1))
+
+y_train_data7 = y_train_data7 %>% rename(sent = ty ) %>% select(sent, index) %>% group_by(index) %>%  count(sent) %>% pivot_wider(names_from = sent, values_from = n, values_fill = 0) %>%  ungroup() %>%  select(2,3,4,5) %>%  as.matrix()
 
 x_test_data5= test_data5 %>% pull(text)
 y_test_data5= test_data5 %>% pull(y)
@@ -244,7 +250,7 @@ model_keras5 <- keras_model_sequential()
 model5 <- model_keras5 %>%
   layer_dense(units = 64, activation = "relu", input_shape = c(5000)) %>% 
   layer_dense(units = 64, activation = "relu") %>% 
-  layer_dense(units = 3, activation = "softmax")
+  layer_dense(units = 4, activation = "softmax")
 ```
 
 We use baseline model compiling with optimizer "adam", loss "binary" as we are dealing with a binary case and the metric we wanna maximize is accuracy.
@@ -265,7 +271,7 @@ And now the model is run 10 times with a batch size of 256
 set.seed(12345)
 history_ann5 <- model5 %>% fit(
   x_train5,
-  y_train_data6,
+  y_train_data7,
   epochs = 10,
   batch_size = 8,
   validation_split = 0.25
