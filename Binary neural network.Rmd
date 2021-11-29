@@ -42,7 +42,7 @@ data = data_start %>%
   distinct() %>%
   mutate(name = paste(Artist, SName))%>%
   rename(text=Lyric) %>%
-  filter(Rock==1 & Pop==1) %>%
+  filter(Rock==1) %>%
   select(name, text)%>%
   distinct(name, .keep_all = T)
 
@@ -167,6 +167,7 @@ multi_data %>%
   count(label)
 ```
 
+
 We start by creating test and training data 
 
 ```{r}
@@ -179,6 +180,7 @@ test_data5= testing(split5)
 ```
 
 
+
 ```{r}
 x_train_data5= train_data5 %>% pull(text)
 y_train_data5= train_data5 %>% pull(y)
@@ -186,13 +188,64 @@ y_train_data8 = y_train_data5 %>% as.factor() %>% unlist
 y_train_data6 = y_train_data5 %>% as.factor() %>% unclass() %>% as.numeric()
 y_train_data7 = y_train_data6 %>% as.data.frame() 
 
-y_train_data7 = y_train_data7 %>% mutate(ty = y_train_data7$.) %>% mutate(index = seq(1,2494,1))
+y_train_data7 = y_train_data7 %>% mutate(ty = y_train_data7$.) %>% mutate(index = seq(1,37254,1))
 
 y_train_data7 = y_train_data7 %>% rename(sent = ty ) %>% select(sent, index) %>% group_by(index) %>%  count(sent) %>% pivot_wider(names_from = sent, values_from = n, values_fill = 0) %>%  ungroup() %>%  select(2,3,4,5) %>%  as.matrix()
 
 x_test_data5= test_data5 %>% pull(text)
 y_test_data5= test_data5 %>% pull(y)
 ```
+
+```{r}
+y_train_data= train_data5 %>% select('y') %>% mutate(y= recode(y, "joy" = 0, "sadness" = 1,"fear" =2, "trust"= 3)) %>% as.matrix()
+
+y_test_data= test_data5 %>% select('y') %>% mutate(y= recode(y, "joy" = 0, "sadness" = 1,"fear" =2, "trust"= 3)) %>% as.matrix()
+```
+
+
+```{r}
+to_one_hot <- function(labels, dimension = 4) {
+  results <- matrix(0, nrow = length(labels), ncol = dimension)
+  for (i in 1:length(labels))
+    results[i, labels[[i]]] <- 1
+  results
+}
+
+
+
+one_hot_train_labels <- to_one_hot(y_train_data)
+one_hot_test_labels <- to_one_hot(y_test_data)
+one_hot_train_labels <- to_categorical(y_train_data)
+```
+
+```{r}
+# For Training data
+tokenizer <- text_tokenizer(num_words = 10000) %>%
+  fit_text_tokenizer(x_train_data5)
+sequences <- texts_to_sequences(tokenizer, x_train_data5)
+
+tokenizer2 <- text_tokenizer(num_words = 10000) %>%
+  fit_text_tokenizer(x_test_data5)
+sequences2 <- texts_to_sequences(tokenizer2, x_test_data5)
+```
+
+
+
+```{r}
+vectorize_sequences <- function(sequences, dimension) {
+  results <- matrix(0, nrow = length(sequences), ncol = dimension)
+  for (i in 1:length(sequences))
+    results[i, sequences[[i]]] <- 1
+  results
+}
+
+x_train <- sequences %>% vectorize_sequences(dimension = 10000)
+
+
+
+x_test <- sequences2 %>%  vectorize_sequences(dimension = 10000)
+```
+
 
 
 ```{r}
@@ -248,9 +301,9 @@ The above data is then used in our baseline model with an input shape of 5000 be
 model_keras5 <- keras_model_sequential()
 
 model5 <- model_keras5 %>%
-  layer_dense(units = 64, activation = "relu", input_shape = c(5000)) %>% 
-  layer_dense(units = 64, activation = "relu") %>% 
-  layer_dense(units = 4, activation = "softmax")
+  layer_dense(units = 8, activation = "relu", input_shape = ncol(x_train)) %>% 
+    layer_dense(units = 8, activation = "relu") %>% 
+    layer_dense(units = ncol(one_hot_train_labels), activation = "softmax")
 ```
 
 We use baseline model compiling with optimizer "adam", loss "binary" as we are dealing with a binary case and the metric we wanna maximize is accuracy.
@@ -258,7 +311,7 @@ We use baseline model compiling with optimizer "adam", loss "binary" as we are d
 model5 %>% compile(
   optimizer = "rmsprop",
   loss = "categorical_crossentropy",
-  metrics = "rmse"
+  metrics = "accuracy"
 )
 ```
 
@@ -270,16 +323,20 @@ And now the model is run 10 times with a batch size of 256
 ```{r}
 set.seed(12345)
 history_ann5 <- model5 %>% fit(
-  x_train5,
-  y_train_data7,
+  x_train,
+  one_hot_train_labels,
   epochs = 10,
-  batch_size = 8,
+  batch_size = 512,
   validation_split = 0.25
 )
 ```
 We then plot the result of the model
 ```{r}
-plot(history_ann)
+plot(history_ann5)
+```
+
+```{r}
+metrics10 = model5 %>% evaluate(x_test, one_hot_test_labels); metrics10
 ```
 
 
