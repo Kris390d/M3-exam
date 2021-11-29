@@ -393,7 +393,7 @@ Running our model on the test data shows an accuracy of 52%, but we will now try
 
 #### Tunning the model
 
-This time we again try to reduce the number of parameters to prevent over fitting. We also make another rnn layer and drop a fraction of the units with a drop_out input.
+This time we again try to reduce the number of parameters to prevent over fitting. We also make another rnn layer and drop a fraction of the units with a drop_out input. Return_sequences = TRUE return the full state sequence of the first rnn layer so next rnn layer gets the full sequence of the input.xMethl
 ```{r}
 model_keras2 <- keras_model_sequential()
 
@@ -444,27 +444,46 @@ Running our model on the test data shows an accuracy of 58%, this is better than
 
 ## LTSM
 
+We will now try our data on a LSTM model, but here we are only running one model, since it takes a very long time to run it. We start by using an embeding layer and then we go to a LSTM layer with a unit size of our paded data, which have the size of 300 due to it being the 300 first words in every song. In the lstm layer, we freeze some of the input weigths and also some of the state weights and since we only use one layer we set sequence = false, so it just compiles the input to a single output.
 ```{r}
-#model <- keras_model_sequential() %>%
-  #layer_embedding(input_dim = 10000, output_dim = 32) %>%
-  #layer_lstm(units = 32) %>%
-  #layer_dense(units = 1, activation = "sigmoid")
+model_lstm <- keras_model_sequential() %>%
+  layer_embedding(input_dim = 5000, output_dim = 32) %>%
+  layer_lstm(units = 300, dropout = 0.25, recurrent_dropout = 0.25, return_sequences = FALSE) %>%
+  layer_dense(units = 1, activation = "sigmoid")
 ```
 
+We use a base compiling
 ```{r}
-#model %>% compile(
-  #optimizer = "rmsprop",
-  #loss = "binary_crossentropy",
-  #metrics = c("acc")
-#)
+model_lstm %>% compile(
+  optimizer = "adam",
+  loss = "binary_crossentropy",
+  metrics = c("acc")
+)
 ```
 
+The model has a lot of parameters which makes it time consumeing to run it.
 ```{r}
-#history <- model %>% fit(
-  #one_hot_train, y_train_data,
-  #epochs = 3,
-  #batch_size = 62,
-  #validation_split = 0.2
-#)
+summary(model_lstm)
+```
+
+Then we run the mode
+```{r}
+history_lstm <- model_lstm %>% fit(
+  x_train_pad, y_train_data,
+  epochs = 10,
+  batch_size = 512,
+  validation_split = 0.25
+)
 
 ```
+
+```{r, warning=FALSE}
+plot(history_lstm) 
+```
+
+The modeldoesnt seem to perform any better than the previous ones, but the traning and validation data did follow each other quiet well for some epochs, but then at the end they split up due to the increasing loss value of the validation data.
+
+```{r}
+metrics5 = model_lstm %>% evaluate(x_test_pad, y_test_data); metrics5
+```
+A rly poor result to say the least with an accuracy of 47%
