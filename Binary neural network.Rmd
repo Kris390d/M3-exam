@@ -133,6 +133,150 @@ sentiment_afinn %<>%
 
 ```
 
+# nrc multiclass
+
+```{r}
+sentiment_nrc <- text_tidy %>%  
+  inner_join(get_sentiments("nrc"))
+
+multi_data=sentiment_nrc %>%
+  filter(sentiment %in% c("negative", "positive", "joy", "fear")) %>%
+  count(name, sentiment) %>%
+  pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>%
+  mutate(label= pmax(positive, joy, negative, fear)) %>%
+  mutate(label= ifelse(label == fear, "fear", ifelse(label == positive, "positive", ifelse(label == negative, "negative", ifelse(label == joy, "joy","none label")))))  %>%
+  select(name, label) %>%
+  inner_join(data)
+
+
+multi_data_new=sentiment_nrc %>%
+  filter(sentiment %in% c("trust", "sadness", "joy", "fear")) %>%
+  count(name, sentiment) %>%
+  pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>%
+  mutate(label= pmax(trust, joy, sadness, fear)) %>%
+  mutate(label= ifelse(label == fear, "fear", ifelse(label == trust, "trust", ifelse(label == sadness, "sadness", ifelse(label == joy, "joy","none label")))))  %>%
+  select(name, label) %>%
+  rename(y= label)%>%
+  inner_join(data)
+
+multi_data_new %>%
+  count(y)
+
+
+multi_data %>%
+  count(label)
+```
+
+We start by creating test and training data 
+
+```{r}
+library(rsample)
+
+split5= initial_split(multi_data_new, prop = 0.75)
+
+train_data5= training(split5)
+test_data5= testing(split5)
+```
+
+
+```{r}
+x_train_data5= train_data5 %>% pull(text)
+y_train_data5= train_data5 %>% pull(y)
+y_train_data6 = y_train_data5 %>% as.factor() %>% unclass() %>% as.numeric()
+
+x_test_data5= test_data5 %>% pull(text)
+y_test_data5= test_data5 %>% pull(y)
+```
+
+
+```{r}
+library(keras)
+
+#for training data
+tokenizer_train5 <- text_tokenizer(num_words = 5000,
+                                  filters = "!\"#$%&()*+,-./:;<=>?@[\\]^_`{|}~\t\n" ) %>%
+  fit_text_tokenizer(x_train_data5)
+
+sequences_train5 = texts_to_sequences(tokenizer_train5, x_train_data5)
+
+
+#For test data
+
+tokenizer_test5 <- text_tokenizer(num_words = 5000,
+                                 filters = "!\"#$%&()*+,-./:;<=>?@[\\]^_`{|}~\t\n" ) %>%
+  fit_text_tokenizer(x_test_data5)
+
+sequences_test5 = texts_to_sequences(tokenizer_test5, x_test_data5)
+
+```
+
+## Baseline model
+
+### One-hot encoding
+
+we use this function Daniel made to vectorize the sequences :)
+```{r}
+vectorize_sequences <- function(sequences, dimension) {
+  results <- matrix(0, nrow = length(sequences), ncol = dimension) 
+  for(i in 1:length(sequences)){
+    results[i, sequences[[i]]] <- 1 
+  }
+  return(results)
+}
+```
+
+we use it on the training and test data
+
+```{r}
+x_train5 <- sequences_train5 %>% vectorize_sequences(dimension = 5000) 
+x_test5 <- sequences_test5 %>% vectorize_sequences(dimension = 5000) 
+
+str(x_train5[1,])
+```
+What the above has done to the data is, that every tweet now is a row and every feature/word now is a column and then if the tweets has e.g. word 1 then it would have the value 1 otherwise zero. So we basically now have a matrix of size [2488x5000] [number of song in training set x number of words].
+
+### The model
+
+The above data is then used in our baseline model with an input shape of 5000 because that is the size of our input. Then we run it through two dense "relu" layers which is normal procedure for a baseline model. Lastly we have a dense layer with the output which is of unit 1 and is a "sigmoid" layer which means it returns a value between 0 and 1 as we want, as we wanna figure out if a song is positive or negative.
+```{r}
+model_keras5 <- keras_model_sequential()
+
+model5 <- model_keras5 %>%
+  layer_dense(units = 64, activation = "relu", input_shape = c(5000)) %>% 
+  layer_dense(units = 64, activation = "relu") %>% 
+  layer_dense(units = 3, activation = "softmax")
+```
+
+We use baseline model compiling with optimizer "adam", loss "binary" as we are dealing with a binary case and the metric we wanna maximize is accuracy.
+```{r}
+model5 %>% compile(
+  optimizer = "rmsprop",
+  loss = "categorical_crossentropy",
+  metrics = "rmse"
+)
+```
+
+Here the structure of the model can be viewed, where it can be seen that the model has 656769 tunable parameters, so not the biggest of models but not the smallest either.
+```{r}
+summary(model5)
+```
+And now the model is run 10 times with a batch size of 256
+```{r}
+set.seed(12345)
+history_ann5 <- model5 %>% fit(
+  x_train5,
+  y_train_data6,
+  epochs = 10,
+  batch_size = 8,
+  validation_split = 0.25
+)
+```
+We then plot the result of the model
+```{r}
+plot(history_ann)
+```
+
+
 # Data
 
 ```{r}
