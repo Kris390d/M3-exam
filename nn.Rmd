@@ -481,9 +481,23 @@ history_lstm <- model_lstm %>% fit(
 plot(history_lstm) 
 ```
 
-The modeldoesnt seem to perform any better than the previous ones, but the traning and validation data did follow each other quiet well for some epochs, but then at the end they split up due to the increasing loss value of the validation data.
+The modeldoesnt seem to perform any better than the previous ones, but the training and validation data did follow each other quiet well for some epochs, but then at the end they split up due to the increasing loss value of the validation data.
 
 ```{r}
 metrics5 = model_lstm %>% evaluate(x_test_pad, y_test_data); metrics5
 ```
-A rly poor result to say the least with an accuracy of 47%
+A rly poor result to say the least with an accuracy of 63%.
+
+
+```{r}
+istory <-model %>%
+  keras::fit(x_train,
+             x_train,
+             epochs = 100,
+             verbose = FALSE,
+             validation_data = list(x_test, x_test),
+             callbacks = list(callback_tensorboard("logs/run_a"),
+                              callback_early_stopping(patience = 5))
+             )
+```
+
