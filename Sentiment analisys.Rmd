@@ -536,6 +536,7 @@ group_by(Artist) %>%
 
 
 ```
+
 ```{r}
 labels_words <- text_band_tf_idf %>%
   group_by(Artist) %>%
@@ -592,9 +593,138 @@ sentiment_RHCP= text_band_tidy %>%
 For at vi kan se sentiment over hver sang kan vi tilføje sang navne igen 
 
 ```{r}
+data_song_name = data_start %>% 
+  filter(Idiom == "ENGLISH") %>% 
+  rename("Link" = "ALink") %>% 
+  inner_join(artists, by = c("Link")) %>% 
+  distinct() %>%
+  filter(Artist %in% c("Bon Jovi", "Green Day", "Red Hot Chili Peppers")) %>%
+  rename(text=Lyric) %>%
+  filter(Pop==1 | Rock==1) %>%
+  select(SName, text)
+```
+
+
+
+```{r}
+library(tidytext)
+text_song_tidy = data_song_name %>% unnest_tokens(word, text, token = "words")
+
+head(text_song_tidy)
+```
+
+We remove short words and stopwords.
+```{r}
+text_song_tidy %<>%
+  filter(str_length(word) > 2 ) %>% 
+  group_by(word) %>%
+  ungroup() %>%
+  anti_join(stop_words, by = 'word') 
+```
+
+We use the hunspell package, which seems to produce the best stemming for our data. Reducing a word to its “root” word. 
+```{r}
+library(hunspell)
+text_song_tidy %>%
+  mutate(stem = hunspell_stem(word)) %>%
+  unnest(stem) %>%
+  count(stem, sort = TRUE)
+
+text_song_tidy %<>% 
+  mutate(stem = hunspell_stem(word)) %>%
+  unnest(stem) %>%
+  select(-word) %>%
+  rename(word = stem) 
+
+```
+Igen fjern ord der ik gir meningn
+
+```{r}
+
+text_song_tidy
 
 ```
 
+
+```{r}
+# TFIDF weights
+text_song_tf_idf= text_song_tidy %>%
+group_by(SName) %>%
+  count(word, sort = TRUE) %>%
+  ungroup() %>% 
+  bind_tf_idf(word, SName, n) %>%
+  arrange(desc(tf_idf))
+
+
+# We can now add the band name 
+
+data_song_artist = data_start %>% 
+  filter(Idiom == "ENGLISH") %>% 
+  rename("Link" = "ALink") %>% 
+  inner_join(artists, by = c("Link")) %>% 
+  distinct() %>%
+  filter(Artist %in% c("Bon Jovi", "Green Day", "Red Hot Chili Peppers")) %>%
+  rename(text=Lyric) %>%
+  filter(Pop==1 | Rock==1) %>%
+  select(Artist,SName)
+
+
+text_song_tf_idf %<>%
+  inner_join(data_song_artist, by= c("SName"))
+
+# For Green Day
+
+green_day_songs=text_song_tf_idf %>%
+  filter(Artist == "Green Day") %>%
+  arrange(desc(tf_idf))%>% 
+  inner_join(get_sentiments("bing"))%>%
+  mutate(sentiment= ifelse(sentiment == "negative", -1, 1)) %>%
+  group_by(SName) %>%
+  summarise(sum= sum(sentiment)) %>%
+  mutate(sentiment_song= ifelse(sum > 0, "positive", ifelse(sum == 0, "neutral", "negative")))%>%
+  count(sentiment_song)
+
+# For RHCP
+
+RHCP_songs=text_song_tf_idf %>%
+  filter(Artist == "Red Hot Chili Peppers") %>%
+  arrange(desc(tf_idf))%>% 
+  inner_join(get_sentiments("bing"))%>%
+  mutate(sentiment= ifelse(sentiment == "negative", -1, 1)) %>%
+  group_by(SName) %>%
+  summarise(sum= sum(sentiment)) %>%
+  mutate(sentiment_song= ifelse(sum > 0, "positive", ifelse(sum == 0, "neutral", "negative")))%>%
+  count(sentiment_song)
+
+# Bon Jovi
+
+Bon_Jovi_songs=text_song_tf_idf %>%
+  filter(Artist == "Bon Jovi") %>%
+  arrange(desc(tf_idf))%>% 
+  inner_join(get_sentiments("bing"))%>%
+  mutate(sentiment= ifelse(sentiment == "negative", -1, 1)) %>%
+  group_by(SName) %>%
+  summarise(sum= sum(sentiment)) %>%
+  mutate(sentiment_song= ifelse(sum > 0, "positive", ifelse(sum == 0, "neutral", "negative")))%>%
+  count(sentiment_song)
+
+
+# For all 
+
+all_songs=text_song_tf_idf %>%
+  arrange(desc(tf_idf))%>% 
+  inner_join(get_sentiments("bing"))%>%
+  mutate(sentiment= ifelse(sentiment == "negative", -1, 1)) %>%
+  group_by(SName) %>%
+  summarise(sum= sum(sentiment)) %>%
+  mutate(sentiment_song= ifelse(sum > 0, "positive", ifelse(sum == 0, "neutral", "negative")))%>%
+  inner_join(data_song_artist, by= c("SName"))
+
+# plot of sentiment by president
+ggplot(all_songs, aes(x = Artist, y = sum, color = Artist)) + 
+  geom_boxplot() # draw a boxplot for each president
+
+```
 
 
 
