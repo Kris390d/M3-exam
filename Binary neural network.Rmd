@@ -184,22 +184,15 @@ test_data5= testing(split5)
 ```{r}
 x_train_data5= train_data5 %>% pull(text)
 y_train_data5= train_data5 %>% pull(y)
-y_train_data8 = y_train_data5 %>% as.factor() %>% unlist
-y_train_data6 = y_train_data5 %>% as.factor() %>% unclass() %>% as.numeric()
-y_train_data7 = y_train_data6 %>% as.data.frame() 
-
-y_train_data7 = y_train_data7 %>% mutate(ty = y_train_data7$.) %>% mutate(index = seq(1,37254,1))
-
-y_train_data7 = y_train_data7 %>% rename(sent = ty ) %>% select(sent, index) %>% group_by(index) %>%  count(sent) %>% pivot_wider(names_from = sent, values_from = n, values_fill = 0) %>%  ungroup() %>%  select(2,3,4,5) %>%  as.matrix()
 
 x_test_data5= test_data5 %>% pull(text)
 y_test_data5= test_data5 %>% pull(y)
 ```
 
 ```{r}
-y_train_data= train_data5 %>% select('y') %>% mutate(y= recode(y, "joy" = 0, "sadness" = 1,"fear" =2, "trust"= 3)) %>% as.matrix()
+y_train_data5= train_data5 %>% select('y') %>% mutate(y= recode(y, "joy" = 0, "sadness" = 1,"fear" =2, "trust"= 3)) %>% as.matrix()
 
-y_test_data= test_data5 %>% select('y') %>% mutate(y= recode(y, "joy" = 0, "sadness" = 1,"fear" =2, "trust"= 3)) %>% as.matrix()
+y_test_data5= test_data5 %>% select('y') %>% mutate(y= recode(y, "joy" = 0, "sadness" = 1,"fear" =2, "trust"= 3)) %>% as.matrix()
 ```
 
 
@@ -215,18 +208,18 @@ to_one_hot <- function(labels, dimension = 4) {
 
 one_hot_train_labels <- to_one_hot(y_train_data)
 one_hot_test_labels <- to_one_hot(y_test_data)
-one_hot_train_labels <- to_categorical(y_train_data)
 ```
 
 ```{r}
+library(keras)
 # For Training data
-tokenizer <- text_tokenizer(num_words = 10000) %>%
+tokenizer10 <- text_tokenizer(num_words = 10000) %>%
   fit_text_tokenizer(x_train_data5)
-sequences <- texts_to_sequences(tokenizer, x_train_data5)
+sequences10 <- texts_to_sequences(tokenizer10, x_train_data5)
 
-tokenizer2 <- text_tokenizer(num_words = 10000) %>%
+tokenizer11 <- text_tokenizer(num_words = 10000) %>%
   fit_text_tokenizer(x_test_data5)
-sequences2 <- texts_to_sequences(tokenizer2, x_test_data5)
+sequences11 <- texts_to_sequences(tokenizer11, x_test_data5)
 ```
 
 
@@ -239,11 +232,11 @@ vectorize_sequences <- function(sequences, dimension) {
   results
 }
 
-x_train <- sequences %>% vectorize_sequences(dimension = 10000)
+x_train10 <- sequences10 %>% vectorize_sequences(dimension = 10000)
 
 
 
-x_test <- sequences2 %>%  vectorize_sequences(dimension = 10000)
+x_test10 <- sequences11 %>%  vectorize_sequences(dimension = 10000)
 ```
 
 
@@ -301,7 +294,7 @@ The above data is then used in our baseline model with an input shape of 5000 be
 model_keras5 <- keras_model_sequential()
 
 model5 <- model_keras5 %>%
-  layer_dense(units = 8, activation = "relu", input_shape = ncol(x_train)) %>% 
+  layer_dense(units = 8, activation = "relu", input_shape = ncol(x_train10)) %>% 
     layer_dense(units = 8, activation = "relu") %>% 
     layer_dense(units = ncol(one_hot_train_labels), activation = "softmax")
 ```
@@ -323,7 +316,7 @@ And now the model is run 10 times with a batch size of 256
 ```{r}
 set.seed(12345)
 history_ann5 <- model5 %>% fit(
-  x_train,
+  x_train10,
   one_hot_train_labels,
   epochs = 10,
   batch_size = 512,
@@ -336,7 +329,7 @@ plot(history_ann5)
 ```
 
 ```{r}
-metrics10 = model5 %>% evaluate(x_test, one_hot_test_labels); metrics10
+metrics10 = model5 %>% evaluate(x_test10, one_hot_test_labels); metrics10
 ```
 
 
@@ -696,15 +689,47 @@ metrics5 = model_lstm %>% evaluate(x_test_pad, y_test_data); metrics5
 A rly poor result to say the least with an accuracy of 63%.
 
 
+
+## LSTM multi
+
 ```{r}
-istory <-model %>%
-  keras::fit(x_train,
-             x_train,
-             epochs = 100,
-             verbose = FALSE,
-             validation_data = list(x_test, x_test),
-             callbacks = list(callback_tensorboard("logs/run_a"),
-                              callback_early_stopping(patience = 5))
-             )
+model_lstm2 <- keras_model_sequential() %>%
+  layer_embedding(input_dim = ncol(x_train), output_dim = 8) %>%
+  layer_lstm(units = 8, dropout = 0.25, recurrent_dropout = 0.25, return_sequences = FALSE) %>%
+  layer_dense(units = ncol(one_hot_train_labels), activation = "softmax")
+
+model_lstm3 = keras_model_sequential() %>% 
+layer_embedding(input_dim = ncol(x_train), output_dim = 8) %>%
+layer_lstm(units = 8,return_sequences = TRUE) %>%
+layer_lstm(units = 8,return_sequences = TRUE) %>%
+bidirectional(layer_lstm(units = 8)) %>%
+layer_dense(units = ncol(one_hot_train_labels), activation = "sigmoid")
+
+
+
 ```
 
+We use a base compiling
+```{r}
+model_lstm3 %>% compile(
+  optimizer = "rmsprop",
+  loss = "categorical_crossentropy",
+  metrics = c("accuracy")
+)
+```
+
+The model has a lot of parameters which makes it time consumeing to run it.
+```{r}
+summary(model_lstm3)
+```
+
+Then we run the mode
+```{r}
+history_lstm3 <- model_lstm3 %>% fit(
+  x_train, one_hot_train_labels,
+  epochs = 5,
+  batch_size = 512,
+  validation_split = 0.25
+)
+
+```
