@@ -318,7 +318,11 @@ test_data_multi= testing(split_multi)
 Then we extract our x and y training and test data to be used in the neural networks.
 ```{r}
 x_train_data= train_data_multi %>% pull(text)
-y_train_data= train_data_multi %>% select('y', "name") %>% mutate(n= 1) %>% pivot_wider(names_from = y, values_from = n, values_fill = 0) %>% select(-name) %>% as.matrix()
+
+y_train_data= train_data_multi %>% select('y') %>% mutate(y= recode(y, "joy" = 0, "sadness" = 1,"fear" =2, "trust"= 3)) %>% as.matrix()
+
+
+#y_train_data= train_data_multi %>% select('y', "name") %>% mutate(n= 1) %>% pivot_wider(names_from = y, values_from = n, values_fill = 0) %>% select(-name) %>% as.matrix()
 
 x_test_data= test_data_multi %>% pull(text)
 y_test_data= test_data_multi %>% pull(y)
@@ -329,38 +333,77 @@ y_test_data= test_data_multi %>% pull(y)
 
 
 ```{r}
+library(keras)
 
 # For Training data
-tokenizer <- text_tokenizer(num_words = 1000) %>%                         
+tokenizer <- text_tokenizer(num_words = 10000) %>%                         
   fit_text_tokenizer(x_train_data)                                        
-sequences <- texts_to_sequences(tokenizer, x_train_data)                       
-one_hot_train <- texts_to_matrix(tokenizer, x_train_data, mode = "binary")   
+sequences <- texts_to_sequences(tokenizer, x_train_data) 
+
+
+
+one_hot_train_x <- texts_to_matrix(tokenizer, x_train_data, mode = "binary")  
+
+
 
 # For test data
 
-tokenizer <- text_tokenizer(num_words = 1000) %>%                         
-  fit_text_tokenizer(x_test_data)                                        
-sequences <- texts_to_sequences(tokenizer, x_test_data)                       
-one_hot_test <- texts_to_matrix(tokenizer, x_test_data, mode = "binary")
+#tokenizer <- text_tokenizer(num_words = 1000) %>%                         
+  #fit_text_tokenizer(x_test_data)                                        
+#sequences <- texts_to_sequences(tokenizer, x_test_data)                       
+#one_hot_test <- texts_to_matrix(tokenizer, x_test_data, mode = "binary")
 ```
+
+```{r}
+vectorize_sequences <- function(sequences, dimension) {
+  results <- matrix(0, nrow = length(sequences), ncol = dimension)
+  for (i in 1:length(sequences))
+    results[i, sequences[[i]]] <- 1
+  results
+}
+
+x_train <- sequences %>% vectorize_sequences(dimension = 10000)
+
+
+
+x_test <- vectorize_sequences(test_data)
+
+```
+
+
+```{r}
+to_one_hot <- function(labels, dimension = 4) {
+  results <- matrix(0, nrow = length(labels), ncol = dimension)
+  for (i in 1:length(labels))
+    results[i, labels[[i]]] <- 1
+  results
+}
+
+one_hot_train_labels <- to_one_hot(y_train_data)
+one_hot_train_labels <- to_categorical(y_train_data)
+```
+
 
 ## ANN
 
+
 ```{r}
 model <- keras_model_sequential() %>%
-  layer_dense(units = 16, activation = "relu", input_shape = c(1000)) %>%
-  layer_dense(units = 16, activation = "relu") %>%
-  layer_dense(units = 1, activation = "softmax")
+  layer_dense(units = 64, activation = "relu", input_shape = c(10000)) %>%
+  layer_dense(units = 64, activation = "relu") %>%
+  layer_dense(units = 4, activation = "softmax")
 ```
 
 
 ```{r}
 model %>% compile(
-  optimizer = "adam",
+  optimizer = "rmsprop",
   loss = "categorical_crossentropy",
   metrics = "accuracy"
 )
 ```
+
+rmsprop
 
 ```{r}
 summary(model)
@@ -370,10 +413,71 @@ summary(model)
 
 ```{r}
 history_ann <- model %>% fit(
-  one_hot_train,
-  y_train_data,
+  x_train,
+  one_hot_train_labels,
   epochs = 10,
   batch_size = 512,
   validation_split = 0.25
 )
+
 ```
+
+
+
+# RNN
+
+```{r}
+model_emb <- keras_model_sequential() %>%
+  layer_embedding(input_dim = 10000, output_dim = 8) %>%
+  layer_simple_rnn(units = 8, activation = "tanh") %>%
+  layer_dense(units = 4, activation = "softmax")
+
+
+model_emb %>% compile(
+  optimizer = "rmsprop",
+  loss = "categorical_crossentropy",
+  metrics = c("acc")
+)
+
+summary(model_emb)
+
+history <- model_emb %>% fit(
+  x_train,
+  one_hot_train_labels,
+  epochs = 3,
+  batch_size = 1024,
+  validation_split = 0.2)
+```
+model <- keras_model_sequential() %>%
+  layer_embedding(input_dim = max_words, output_dim = embedding_dim,
+                  input_length = maxlen) %>%
+  layer_flatten() %>%
+  layer_dense(units = 32, activation = "relu") %>%
+  layer_dense(units = 1, activation = "sigmoid")
+summary(model)
+
+
+#LSTM
+
+```{r}
+model <- keras_model_sequential() %>%
+  layer_embedding(input_dim = 10000, output_dim = 8) %>%
+  layer_lstm(units = 8) %>%
+  layer_dense(units = 4, activation = "softmax")
+
+
+model %>% compile(
+  optimizer = "rmsprop",
+  loss = "categorical_crossentropy",
+  metrics = c("acc")
+)
+
+history <- model %>% fit(
+  x_train,
+  one_hot_train_labels,
+  epochs = 4,
+  batch_size = 1024,
+  validation_split = 0.25
+)
+```
+
