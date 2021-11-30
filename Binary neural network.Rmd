@@ -42,7 +42,7 @@ data = data_start %>%
   distinct() %>%
   mutate(name = paste(Artist, SName))%>%
   rename(text=Lyric) %>%
-  filter(Rock==1) %>%
+  filter(Rock==1 & Pop ==1) %>%
   select(name, text)%>%
   distinct(name, .keep_all = T)
 
@@ -206,8 +206,8 @@ to_one_hot <- function(labels, dimension = 4) {
 
 
 
-one_hot_train_labels <- to_one_hot(y_train_data)
-one_hot_test_labels <- to_one_hot(y_test_data)
+one_hot_train_labels <- to_one_hot(y_train_data5)
+one_hot_test_labels <- to_one_hot(y_test_data5)
 ```
 
 ```{r}
@@ -314,7 +314,7 @@ summary(model5)
 ```
 And now the model is run 10 times with a batch size of 256
 ```{r}
-set.seed(12345)
+set.seed(5645)
 history_ann5 <- model5 %>% fit(
   x_train10,
   one_hot_train_labels,
@@ -449,7 +449,7 @@ summary(model)
 ```
 And now the model is run 10 times with a batch size of 256
 ```{r}
-set.seed(12345)
+set.seed(5645)
 history_ann <- model %>% fit(
   x_train,
   y_train_data,
@@ -501,7 +501,7 @@ summary(model2)
 ```
 And now the model is run 10 times with a batch size of 512, so a bigger batch size than the baseline model.
 ```{r}
-set.seed(12345)
+set.seed(5645)
 history_ann2 <- model2 %>% fit(
   x_train,
   y_train_data,
@@ -571,7 +571,7 @@ model_rnn %>% compile(
 
 And run our model
 ```{r}
-set.seed(12345)
+set.seed(5645)
 history_rnn <- model_rnn %>% fit(
   x_train_pad, y_train_data,
   epochs = 10,
@@ -620,7 +620,7 @@ model_rnn2 %>% compile(
 
 And run our model
 ```{r}
-set.seed(12345)
+set.seed(5645)
 history_rnn2 <- model_rnn2 %>% fit(
   x_train_pad, y_train_data,
   epochs = 25,
@@ -698,12 +698,12 @@ model_lstm2 <- keras_model_sequential() %>%
   layer_lstm(units = 8, dropout = 0.25, recurrent_dropout = 0.25, return_sequences = FALSE) %>%
   layer_dense(units = ncol(one_hot_train_labels), activation = "softmax")
 
-model_lstm3 = keras_model_sequential() %>% 
-layer_embedding(input_dim = ncol(x_train), output_dim = 8) %>%
-layer_lstm(units = 8,return_sequences = TRUE) %>%
-layer_lstm(units = 8,return_sequences = TRUE) %>%
-bidirectional(layer_lstm(units = 8)) %>%
-layer_dense(units = ncol(one_hot_train_labels), activation = "sigmoid")
+#model_lstm3 = keras_model_sequential() %>% 
+#layer_embedding(input_dim = ncol(x_train), output_dim = 8) %>%
+#layer_lstm(units = 8,return_sequences = TRUE) %>%
+#layer_lstm(units = 8,return_sequences = TRUE) %>%
+#bidirectional(layer_lstm(units = 8)) %>%
+#layer_dense(units = ncol(one_hot_train_labels), activation = "sigmoid")
 
 
 
@@ -711,7 +711,7 @@ layer_dense(units = ncol(one_hot_train_labels), activation = "sigmoid")
 
 We use a base compiling
 ```{r}
-model_lstm3 %>% compile(
+model_lstm2 %>% compile(
   optimizer = "rmsprop",
   loss = "categorical_crossentropy",
   metrics = c("accuracy")
@@ -720,12 +720,13 @@ model_lstm3 %>% compile(
 
 The model has a lot of parameters which makes it time consumeing to run it.
 ```{r}
-summary(model_lstm3)
+summary(model_lstm2)
 ```
 
 Then we run the mode
 ```{r}
-history_lstm3 <- model_lstm3 %>% fit(
+5645
+history_lstm2 <- model_lstm2 %>% fit(
   x_train, one_hot_train_labels,
   epochs = 5,
   batch_size = 512,
