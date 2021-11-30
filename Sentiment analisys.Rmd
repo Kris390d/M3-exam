@@ -155,37 +155,39 @@ group_by(name) %>%
 text_genre_tf_idf = text_tf_idf %>%
   left_join(data_pop_rock_labels)
 
-
-
-
 ```
 
-We show the 25 most common words. 
+We show the 25 most common words within the 3 genres. 
 ```{r}
 # TFIDF topwords
 text_genre_tidy_rock= text_genre_tf_idf %>%
   filter(genre == "Rock")%>%
-count(word, wt = tf_idf, sort = TRUE) %>% #remove
+count(word, wt = tf_idf, sort = TRUE)%>%
+  filter(!word == "chorus") %>% #remove
 head(25)
 
-
 text_genre_tidy_rock_pop= text_genre_tf_idf %>%
-  filter(genre == "pop/rock")%>%
+  filter(genre == "Pop/Rock")%>%
 count(word, wt = tf_idf, sort = TRUE) %>% #remove
 head(25)
 
 text_genre_tidy_pop= text_genre_tf_idf %>%
   filter(genre == "Pop")%>%
-count(word, wt = tf_idf, sort = TRUE) %>% #remove
+count(word, wt = tf_idf, sort = TRUE)%>%
+  filter(!word == "chorus")%>%
+  filter(!word == "ooh")%>% #remove
 head(25)
 
 ```
 
+We now plot the 20 most used words within each genre. 
 ```{r}
 labels_words <- text_genre_tf_idf %>%
 group_by(genre) %>%
 count(word, wt = tf_idf, sort = TRUE, name = "tf_idf") %>%
-dplyr::slice(1:20) %>% #slice
+dplyr::slice(1:20)%>%
+  filter(!word == "chorus")%>%
+  filter(!word == "ooh") %>% #slice
 ungroup()
 
 ```
@@ -205,7 +207,7 @@ theme(axis.text.y = element_text(size = 6))
 
 ##Rock wordcloud
 
-EDA within the Pop and Rock genres. 
+EDA within the Rock genres. 
 ```{r}
 text_tidy_rock = text_genre_tidy %>%
   filter(genre == "Rock")
@@ -226,7 +228,7 @@ color = "blue"))
 
 ##Pop wordcloud
 
-EDA within the Pop and Rock genres. 
+EDA within the Pop genres. 
 ```{r}
 text_tidy_Pop = text_genre_tidy %>%
 filter(genre == "Pop")
@@ -243,9 +245,11 @@ color = "blue"))
 ```
 
 ##Pop/Rock wordcloud
+
+EDA within the Pop/Rock genres. 
 ```{r}
 text_tidy_Pop_Rock = text_genre_tidy %>%
-filter(genre == "pop/rock")
+filter(genre == "Pop/Rock")
 
 ```
 
@@ -261,7 +265,7 @@ color = "blue"))
 
 #Sentiment Analysis
 
-## Rock_Pop
+##Rock_Pop
 
 We do a sentiment analysis based on the Pop genre.
 ```{r}
@@ -304,20 +308,20 @@ select(index, sentiment, lexicon))
 
 ```
 
-We create a plot for the distribution between negative and positive words within the data genre.
+We create a plot for the distribution between negative and positive words within the Pop/Rock genre.
 ```{r}
 sentiment_all %>%
 ggplot(aes(x = index, y = sentiment, fill = lexicon)) +
 geom_col(show.legend = FALSE) +
 facet_wrap(~ lexicon) +
-labs(title = "Sentiment Analysis: “Pop",
+labs(title = "Sentiment Analysis: “Pop/Rock",
 subtitle = 'Using the Bing, AFINN lexicon')
 
 ```
 
-### Senteminet wordcloud
+###Senteminet wordcloud
 
-We can now create a wordcloud looking at the positive and negative words in the Pop genre.
+We can now create a wordcloud looking at the positive and negative words in the Pop/Rock genre.
 ```{r}
 text_tidy_Pop_Rock %>%
 inner_join(get_sentiments("bing")) %>%
@@ -333,9 +337,7 @@ title.size = 1.5)
 
 ```
 
-
-
-## pop
+##Pop
 
 We do a sentiment analysis based on the Pop genre.
 ```{r}
@@ -378,7 +380,7 @@ select(index, sentiment, lexicon))
 
 ```
 
-We create a plot for the distribution between negative and positive words within the data genre.
+We create a plot for the distribution between negative and positive words within the Pop genre.
 ```{r}
 sentiment_all_pop %>%
 ggplot(aes(x = index, y = sentiment, fill = lexicon)) +
@@ -389,7 +391,7 @@ subtitle = 'Using the Bing, AFINN lexicon')
 
 ```
 
-### Senteminet wordcloud
+###Senteminet wordcloud
 
 We can now create a wordcloud looking at the positive and negative words in the Pop genre.
 ```{r}
@@ -407,11 +409,9 @@ title.size = 1.5)
 
 ```
 
+##Rock
 
-
-## Rock
-
-We do a sentiment analysis based on the Pop genre.
+We do a sentiment analysis based on the Rock genre.
 ```{r}
 library(textdata)
 
@@ -452,7 +452,7 @@ select(index, sentiment, lexicon))
 
 ```
 
-We create a plot for the distribution between negative and positive words within the data genre.
+We create a plot for the distribution between negative and positive words within the Rock genre.
 ```{r}
 sentiment_all_rock %>%
 ggplot(aes(x = index, y = sentiment, fill = lexicon)) +
@@ -463,9 +463,9 @@ subtitle = 'Using the Bing, AFINN lexicon')
 
 ```
 
-### Senteminet wordcloud
+###Senteminet wordcloud
 
-We can now create a wordcloud looking at the positive and negative words in the Pop genre.
+We can now create a wordcloud looking at the positive and negative words in the Rock genre.
 ```{r}
 text_tidy_rock %>%
 inner_join(get_sentiments("bing")) %>%
@@ -483,9 +483,7 @@ title.size = 1.5)
 
 # Bands analysis 
 
-
-We dont need the genre any more so we remove
-
+We dont need the genre any more so we remove it. 
 ```{r}
 data_band = data_start %>% 
   filter(Idiom == "ENGLISH") %>% 
@@ -497,16 +495,13 @@ data_band = data_start %>%
   select(Artist, text)
 ```
 
-We want to see the most active artists
-
+We want to see the most active artists.
 ```{r}
 data_band %>%
   count(Artist, sort = T)
 ```
 
 We pick the top 3 artists (in our opinion) Green day, Bon Jovi and Red Hot Chili Peppers!
-
-
 ```{r}
 best_artists= data_band %>%
   filter(Artist %in% c("Green Day",  "Bon Jovi" , "Red Hot Chili Peppers" ))
@@ -555,16 +550,48 @@ group_by(Artist) %>%
   ungroup() %>% 
   bind_tf_idf(word, Artist, n) %>%
   arrange(desc(tf_idf))
+
 ```
 
+We show the 25 most common words within the 3 artists. 
 ```{r}
-labels_words <- text_band_tf_idf %>%
+# TFIDF topwords
+text_band_tidy_Bon_Jovi= text_band_tf_idf %>%
+  filter(Artist == "Bon Jovi")%>%
+count(word, wt = tf_idf, sort = TRUE)%>%
+  filter(!word == "mo") %>% #remove
+head(25)
+
+text_band_tidy_Green_Day= text_band_tf_idf %>%
+  filter(Artist == "Green Day")%>%
+count(word, wt = tf_idf, sort = TRUE)%>%
+  filter(!word == "intro")%>%
+  filter(!word == "riff") %>% #remove
+head(25)
+
+text_band_tidy_RHCP= text_band_tf_idf %>%
+  filter(Artist == "Red Hot Chili Peppers")%>%
+count(word, wt = tf_idf, sort = TRUE)%>%
+  filter(!word == "co")%>%
+  filter(!word == "cos") %>% #remove
+head(25)
+
+```
+
+We now plot the 20 most used words within each genre. 
+```{r}
+labels_words_band <- text_band_tf_idf %>%
   group_by(Artist) %>%
   count(word, wt = tf_idf, sort = TRUE, name = "tf_idf") %>%
-  dplyr::slice(1:12) %>% 
+  dplyr::slice(1:20)%>%
+  filter(!word == "mo")%>%
+  filter(!word == "intro")%>%
+  filter(!word == "riff")%>%
+  filter(!word == "co")%>%
+  filter(!word == "cos") %>% 
   ungroup() 
 
-labels_words %>%
+labels_words_band %>%
   mutate(word = reorder_within(word, by = tf_idf, within = Artist)) %>%
   ggplot(aes(x = word, y = tf_idf, fill = Artist)) +
   geom_col(show.legend = FALSE) +
@@ -574,9 +601,6 @@ labels_words %>%
   scale_x_reordered() +
   theme(axis.text.y = element_text(size = 6))
 ```
-
-Hvis vi kan fjerne "intro" osv. 
-
 
 ## Noget andet 
 
