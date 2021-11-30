@@ -597,6 +597,35 @@ A rly poor result to say the least with an accuracy of 63%.
 # NN multiclass
 
 ```{r}
+library(magrittr)
+
+sentiment_nrc <- text_tidy %>%  
+  inner_join(get_sentiments("nrc"))
+
+multi_data=sentiment_nrc %>%
+  filter(sentiment %in% c("negative", "positive", "joy", "fear")) %>%
+  count(name, sentiment) %>%
+  pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>%
+  mutate(label= pmax(positive, joy, negative, fear)) %>%
+  mutate(label= ifelse(label == fear, "fear", ifelse(label == positive, "positive", ifelse(label == negative, "negative", ifelse(label == joy, "joy","none label")))))  %>%
+  select(name, label) %>%
+  inner_join(data)
+
+
+multi_data_new=sentiment_nrc %>%
+  filter(sentiment %in% c("trust", "sadness", "joy", "fear")) %>%
+  count(name, sentiment) %>%
+  pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>%
+  mutate(label= pmax(trust, joy, sadness, fear)) %>%
+  mutate(label= ifelse(label == fear, "fear", ifelse(label == trust, "trust", ifelse(label == sadness, "sadness", ifelse(label == joy, "joy","none label")))))  %>%
+  select(name, label) %>%
+  rename(y= label)%>%
+  inner_join(data)
+
+```
+
+
+```{r}
 library(rsample)
 split5= initial_split(multi_data_new, prop = 0.75)
 train_data5= training(split5)
