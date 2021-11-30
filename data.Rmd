@@ -117,6 +117,7 @@ text_genre_tidy %<>%
   unnest(stem) %>%
   select(-word) %>%
   rename(word = stem)
+
 ```
 
 We weight the data using tf-idf (Term-frequency Inverse document frequency). 
@@ -139,7 +140,8 @@ We show the 25 most common words within the 3 genres.
 # TFIDF topwords
 text_genre_tidy_rock= text_genre_tf_idf %>%
   filter(genre == "Rock")%>%
-count(word, wt = tf_idf, sort = TRUE) %>% #remove
+count(word, wt = tf_idf, sort = TRUE)%>%
+  filter(!word == "chorus") %>% #remove
 head(25)
 
 text_genre_tidy_rock_pop= text_genre_tf_idf %>%
@@ -149,7 +151,9 @@ head(25)
 
 text_genre_tidy_pop= text_genre_tf_idf %>%
   filter(genre == "Pop")%>%
-count(word, wt = tf_idf, sort = TRUE) %>% #remove
+count(word, wt = tf_idf, sort = TRUE)%>%
+  filter(!word == "chorus")%>%
+  filter(!word == "ooh")%>% #remove
 head(25)
 
 ```
