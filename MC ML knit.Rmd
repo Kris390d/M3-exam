@@ -1,0 +1,945 @@
+---
+title: "MC ML knit"
+author: "Andreas Methling"
+date: "30/11/2021"
+output: pdf_document
+---
+
+
+```{r, message=FALSE}
+library(tidyverse)
+library(lubridate)
+library(magrittr)
+library(FactoMineR)
+library(factoextra)
+library(uwot)
+library(GGally)
+library(rsample)
+library(ggridges)
+library(xgboost)
+library(recipes)
+library(parsnip)
+library(glmnet)
+library(tidymodels)
+library(skimr)
+library(VIM)
+library(visdat)
+library(ggmap)
+library(ranger)
+library(vip)
+library(SnowballC)
+library(tokenizers)
+library(formatR)
+
+```
+
+
+# Data
+
+```{r}
+library(readr)
+data_start <- read_csv("C:/Users/andre/Desktop/lyrics-data.csv")
+artists_data <- read_csv("C:/Users/andre/Downloads/artists-data.csv")
+```
+
+**Artist data**
+```{r}
+artists = artists_data %>% 
+  group_by(Artist) %>% 
+  count(Genre) %>% 
+  pivot_wider(names_from = Genre, values_from = n) %>% 
+  replace_na(list(Pop = 0, "Hip Hop" = 0, Rock = 0, "Funk Carioca" = 0, "Sertanejo" = 0, Samba = 0 )) %>% 
+  ungroup() %>% 
+  left_join(artists_data, by = c("Artist")) %>% 
+  select(-c(Genre, Genres, Popularity, Songs)) %>% 
+  distinct()
+```
+
+**Data Rock or Pop**
+```{r}
+data_genre = data_start %>% 
+  filter(Idiom == "ENGLISH") %>% 
+  rename("Link" = "ALink") %>% 
+  inner_join(artists, by = c("Link")) %>% 
+  distinct() %>%
+  mutate(name = paste(Artist, SName))%>%
+  rename(text=Lyric) %>%
+  filter(Pop==1 | Rock==1) %>%
+  select(name, text, Pop, Rock) %>%
+  distinct(name, .keep_all = T)
+
+
+
+data_pop_rock=data_genre %>%
+  mutate(genre = ifelse(Pop==1 & Rock == 1, "pop/rock", ifelse(Rock==1 & Pop==0, "Rock", ifelse(Rock == 0 & Pop == 1, "Pop", 0)))) %>%
+  select(-c(Pop, Rock))
+
+data_pop_rock_labels= data_pop_rock %>%
+  select(name, genre)
+```
+
+```{r}
+data = data_start %>% 
+  filter(Idiom == "ENGLISH") %>% 
+  rename("Link" = "ALink") %>% 
+  inner_join(artists, by = c("Link")) %>% 
+  distinct() %>%
+  mutate(name = paste(Artist, SName))%>%
+  rename(text=Lyric) %>%
+  filter(Rock==1 & Pop==1) %>%
+  select(name, text)%>%
+  distinct(name, .keep_all = T)
+```
+
+## Making labels
+
+```{r}
+library(tidytext)
+text_tidy = data %>% unnest_tokens(word, text, token = "words")
+head(text_tidy)
+```
+
+```{r}
+text_tidy %<>%
+  filter(str_length(word) > 2 ) %>% 
+  group_by(word) %>%
+  ungroup() %>%
+  anti_join(stop_words, by = 'word') 
+```
+
+We use stemming 
+```{r}
+library(hunspell)
+text_tidy %<>% 
+  mutate(stem = hunspell_stem(word)) %>%
+  unnest(stem) %>%
+   select(-word) %>%
+  rename(word = stem)
+```
+
+```{r}
+top_10000_words=text_tidy %>%
+  count(word,sort = T) %>%
+  head(10000) %>%
+  select(word)
+data_top_10000=top_10000_words %>%
+  left_join(text_tidy, by= c("word")) 
+```
+
+# Bing
+```{r}
+sentiment_bing= data_top_10000 %>%
+  inner_join(get_sentiments("bing")) %>%
+  mutate(sentiment= ifelse(sentiment == "positive", 1,0)) 
+sentiment_bing %<>%
+  group_by(name) %>%
+  summarise(mean= mean(sentiment))%>%
+  mutate(label= ifelse(mean>=0.5, 1,0))
+```
+
+# Afinn
+
+```{r}
+sentiment_afinn= data_top_10000 %>%
+  inner_join(get_sentiments("afinn")) 
+sentiment_afinn %<>%
+  group_by(name) %>%
+  summarise(mean= mean(value))%>%
+  mutate(label= ifelse(mean>=0, 1,0))
+```
+
+# Data
+
+```{r}
+data_bing= sentiment_bing %>%
+  inner_join(data)%>%
+  select(text, label, name)
+  
+data_afinn= sentiment_afinn %>%
+  inner_join(data)%>%
+  select(text, label, name)
+```
+
+# Multiclass ML model. 
+
+
+```{r}
+library(magrittr)
+
+sentiment_nrc <- text_tidy %>%  
+  inner_join(get_sentiments("nrc"))
+
+multi_data=sentiment_nrc %>%
+  filter(sentiment %in% c("negative", "positive", "joy", "fear")) %>%
+  count(name, sentiment) %>%
+  pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>%
+  mutate(label= pmax(positive, joy, negative, fear)) %>%
+  mutate(label= ifelse(label == fear, "fear", ifelse(label == positive, "positive", ifelse(label == negative, "negative", ifelse(label == joy, "joy","none label")))))  %>%
+  select(name, label) %>%
+  inner_join(data)
+
+
+multi_data_new=sentiment_nrc %>%
+  filter(sentiment %in% c("trust", "sadness", "joy", "fear")) %>%
+  count(name, sentiment) %>%
+  pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>%
+  mutate(label= pmax(trust, joy, sadness, fear)) %>%
+  mutate(label= ifelse(label == fear, "fear", ifelse(label == trust, "trust", ifelse(label == sadness, "sadness", ifelse(label == joy, "joy","none label")))))  %>%
+  select(name, label) %>%
+  rename(y= label)%>%
+  inner_join(data)
+
+```
+
+```{r}
+library(rsample)
+
+split= initial_split(multi_data_new, prop = 0.75)
+
+train_data= training(split)
+test_data= testing(split)
+```
+
+
+
+```{r}
+library(recipes)
+train_data <- recipe(y~., data = train_data) %>% 
+  themis::step_downsample(y) %>% 
+  prep() %>% 
+  juice()
+
+
+train_data %>%
+  count(y)
+```
+And can now see that the classes are evenly distributed. 
+
+```{r}
+library(textdata)
+
+glove6b <- embedding_glove6b(dimensions = 100)
+```
+
+
+We create the three recipies we want to use. 
+```{r}
+
+library(textrecipes)
+
+
+tf_idf_rec <- recipe(y~., data = train_data) %>% 
+  step_tokenize(text) %>% 
+  step_stem(text) %>% 
+  step_stopwords(text) %>% 
+  step_tokenfilter(text, max_tokens = 1000) %>% 
+  step_tfidf(all_predictors()) 
+
+
+embeddings_rec <- recipe(y~., data = train_data) %>% 
+  step_tokenize(text) %>% 
+  step_stem(text) %>% 
+  step_stopwords(text) %>% 
+  step_tokenfilter(text, max_tokens = 1000) %>% 
+  step_word_embeddings(text, embeddings = embedding_glove6b())
+
+
+hash_rec <- recipe(y~., data = train_data) %>% 
+  step_tokenize(text) %>% 
+  step_stem(text) %>% 
+  step_stopwords(text) %>% 
+  step_tokenfilter(text, max_tokens = 1000) %>% 
+  step_texthash(text, num_terms = 100) 
+
+```
+
+
+## Define models Term frequency
+
+We define three models:
+
+All models are coded to do multiclass predcitions. 
+We set some of the parameters for tuning. 
+
+### Logistic model
+
+```{r}
+library(tidymodels)
+
+model_lg <- multinom_reg(penalty = tune(), mixture = 1) %>% 
+  set_engine("glmnet") %>% 
+  set_mode("classification")
+```
+
+### KNN model
+
+```{r}
+model_knn <- nearest_neighbor(neighbors = tune()) %>% 
+  set_engine("kknn") %>% 
+  set_mode("classification")
+```
+
+
+### Random Forrest
+```{r}
+model_rf <- 
+  rand_forest() %>% 
+  set_engine("ranger", importance = "impurity") %>% 
+  set_mode("classification")
+```
+
+## Workflow 
+
+We create workflows for each recipe. 
+
+### tf_idf
+
+```{r}
+workflow_general_tf <- workflow() %>%
+  add_recipe(tf_idf_rec)
+
+workflow_lg_tf <- workflow_general_tf %>%
+  add_model(model_lg)
+
+workflow_knn_tf <- workflow_general_tf %>%
+  add_model(model_knn)
+
+workflow_rf_tf <- workflow_general_tf %>%
+  add_model(model_rf)
+```
+
+
+### Embeding
+
+```{r}
+workflow_general_emb <- workflow() %>%
+  add_recipe(embeddings_rec)
+
+workflow_lg_emb <- workflow_general_emb %>%
+  add_model(model_lg)
+
+workflow_knn_emb <- workflow_general_emb %>%
+  add_model(model_knn)
+
+workflow_rf_emb <- workflow_general_emb %>%
+  add_model(model_rf)
+```
+
+
+### hash
+
+```{r}
+workflow_general_hash <- workflow() %>%
+  add_recipe(hash_rec)
+
+workflow_lg_hash <- workflow_general_hash %>%
+  add_model(model_lg)
+
+workflow_knn_hash <- workflow_general_hash %>%
+  add_model(model_knn)
+
+workflow_rf_hash <- workflow_general_hash %>%
+  add_model(model_rf)
+```
+
+
+## Hyper tuneing
+
+We use vfold_cv to create resampled data. to perfrom hypertuning and fitting. 
+```{r}
+set.seed(100)
+
+k_folds_data <- train_data %>% 
+  vfold_cv(strata = y,
+           v = 3,
+           repeats = 3)
+```
+
+### Define Grids
+
+We define the grids we want to use for the hypertuning 
+```{r}
+logistic_grid <- grid_regular(parameters(model_lg), levels = 3)
+knn_grid <- grid_regular(parameters(model_knn), levels = 5, filter = c(neighbors > 1))
+```
+The level defines the amount of parameters that should be considered. 
+
+### Define tuning process
+
+We define which measures we want to be able to choose best parameters from. 
+```{r}
+model_control <- control_grid(save_pred = TRUE)
+model_metrics <- metric_set(accuracy, sens, spec, mn_log_loss, roc_auc)
+```
+
+
+### Tune Models
+
+We tune the three different models 
+```{r}
+# Tune hash models
+linear_hash_res <- tune_grid(
+  model_lg,
+  hash_rec,
+  grid = logistic_grid,
+  control = model_control,
+  metrics = model_metrics,
+  resamples = k_folds_data
+)
+
+
+knn_hash_res <- tune_grid(
+  model_knn,
+  hash_rec,
+  grid = knn_grid,
+  control = model_control,
+  metrics = model_metrics,
+  resamples = k_folds_data
+)
+```
+
+
+```{r}
+# Tune embed models
+linear_embed_res <- tune_grid(
+  model_lg,
+  embeddings_rec,
+  grid = logistic_grid,
+  control = model_control,
+  metrics = model_metrics,
+  resamples = k_folds_data
+)
+
+
+knn_embed_res <- tune_grid(
+  model_knn,
+  embeddings_rec,
+  grid = knn_grid,
+  control = model_control,
+  metrics = model_metrics,
+  resamples = k_folds_data
+)
+```
+
+
+```{r}
+# Tune tf-idf models
+linear_tf_res <- tune_grid(
+  model_lg,
+  tf_idf_rec,
+  grid = logistic_grid,
+  control = model_control,
+  metrics = model_metrics,
+  resamples = k_folds_data
+)
+
+
+knn_tf_res <- tune_grid(
+  model_knn,
+  tf_idf_rec,
+  grid = knn_grid,
+  control = model_control,
+  metrics = model_metrics,
+  resamples = k_folds_data
+)
+
+```
+
+
+### Best parameters
+
+We look at the different optimizations and choose the best parameters. 
+
+#### linear_embed_res
+
+We use autoplot
+
+```{r}
+linear_hash_res %>% autoplot()
+```
+
+```{r}
+best_param_linear_hash_res <- linear_hash_res %>% select_best(metric = 'accuracy')
+best_param_linear_hash_res
+```
+#### knn_embed_res
+
+We use autoplot
+
+```{r}
+knn_hash_res %>% autoplot()
+```
+
+```{r}
+best_param_knn_hash_res <- knn_hash_res %>% select_best(metric = 'accuracy')
+best_param_knn_hash_res
+```
+
+#### linear_embed_res
+
+We use autoplot
+
+```{r}
+linear_embed_res %>% autoplot()
+```
+
+```{r}
+best_param_linear_embed_res <- linear_embed_res %>% select_best(metric = 'accuracy')
+best_param_linear_embed_res
+```
+#### knn_embed_res
+
+We use autoplot
+
+```{r}
+knn_embed_res %>% autoplot()
+```
+
+```{r}
+best_param_knn_embed_res <- knn_embed_res %>% select_best(metric = 'accuracy')
+best_param_knn_embed_res
+```
+
+#### linear_tf_res
+
+We use autoplot
+
+```{r}
+linear_tf_res %>% autoplot()
+```
+
+```{r}
+best_param_linear_tf_res <- linear_tf_res %>% select_best(metric = 'accuracy')
+best_param_linear_tf_res
+```
+
+#### knn_tf_res
+
+We use autoplot
+
+```{r}
+knn_tf_res %>% autoplot()
+```
+
+```{r}
+best_param_knn_tf_res <- knn_tf_res %>% select_best(metric = 'accuracy')
+best_param_knn_tf_res
+```
+
+## Finalize workflows
+
+We now fit the best parameters into the workflow of the two models that needed hypertuning. 
+
+### Hash
+
+```{r}
+workflow_final_lg_hash <- workflow_lg_hash %>%
+  finalize_workflow(parameters = best_param_linear_hash_res)
+
+workflow_final_knn_hash <- workflow_knn_hash %>%
+  finalize_workflow(parameters = best_param_knn_hash_res)
+```
+
+
+### Tf-idf
+
+```{r}
+workflow_final_lg_tf <- workflow_lg_tf %>%
+  finalize_workflow(parameters = best_param_linear_tf_res)
+
+workflow_final_knn_tf <- workflow_knn_tf %>%
+  finalize_workflow(parameters = best_param_knn_tf_res)
+```
+
+
+### Embedings
+
+```{r}
+workflow_final_lg_emb <- workflow_lg_emb %>%
+  finalize_workflow(parameters = best_param_linear_embed_res)
+
+workflow_final_knn_emb <- workflow_knn_emb %>%
+  finalize_workflow(parameters = best_param_knn_embed_res)
+```
+
+
+## Evaluate models
+
+
+here we us the resampled data to evaluate the models. 
+
+### Logistic regression
+
+
+#### hash
+
+```{r}
+
+log_res_hash <- 
+  workflow_final_lg_hash %>% 
+  fit_resamples(
+    resamples = k_folds_data, 
+    metrics = metric_set(
+      recall, precision, f_meas, 
+      accuracy, kap,
+      roc_auc, sens, spec),
+    control = control_resamples(
+      save_pred = TRUE)
+    ) 
+
+log_res_hash %>% collect_metrics(summarize = TRUE)
+
+```
+
+#### Tf_idf
+
+```{r}
+
+log_res_tf <- 
+  workflow_final_lg_tf %>% 
+  fit_resamples(
+    resamples = k_folds_data, 
+    metrics = metric_set(
+      recall, precision, f_meas, 
+      accuracy, kap,
+      roc_auc, sens, spec),
+    control = control_resamples(
+      save_pred = TRUE)
+    ) 
+
+log_res_tf %>% collect_metrics(summarize = TRUE)
+
+```
+#### Embeding
+
+```{r}
+
+log_res_emb <- 
+  workflow_final_lg_emb %>% 
+  fit_resamples(
+    resamples = k_folds_data, 
+    metrics = metric_set(
+      recall, precision, f_meas, 
+      accuracy, kap,
+      roc_auc, sens, spec),
+    control = control_resamples(
+      save_pred = TRUE)
+    ) 
+
+log_res_emb %>% collect_metrics(summarize = TRUE)
+
+```
+
+
+
+### KNN model
+
+#### Hash
+
+```{r}
+
+knn_res_hash <- 
+  workflow_final_knn_hash %>% 
+  fit_resamples(
+    resamples = k_folds_data, 
+    metrics = metric_set(
+      recall, precision, f_meas, 
+      accuracy, kap,
+      roc_auc, sens, spec),
+    control = control_resamples(
+      save_pred = TRUE)
+    ) 
+
+knn_res_hash %>% collect_metrics(summarize = TRUE)
+
+```
+
+#### TF-idf
+
+```{r}
+
+knn_res_tf <- 
+  workflow_final_knn_tf %>% 
+  fit_resamples(
+    resamples = k_folds_data, 
+    metrics = metric_set(
+      recall, precision, f_meas, 
+      accuracy, kap,
+      roc_auc, sens, spec),
+    control = control_resamples(
+      save_pred = TRUE)
+    ) 
+
+knn_res_tf %>% collect_metrics(summarize = TRUE)
+
+```
+
+#### Embedings
+
+```{r}
+
+knn_res_emb <- 
+  workflow_final_knn_emb %>% 
+  fit_resamples(
+    resamples = k_folds_data, 
+    metrics = metric_set(
+      recall, precision, f_meas, 
+      accuracy, kap,
+      roc_auc, sens, spec),
+    control = control_resamples(
+      save_pred = TRUE)
+    ) 
+
+knn_res_emb %>% collect_metrics(summarize = TRUE)
+
+```
+
+### Random forest model
+
+#### hash
+
+```{r}
+
+rf_res_hash <- 
+  workflow_rf_hash %>% 
+  fit_resamples(
+    resamples = k_folds_data, 
+    metrics = metric_set(
+      recall, precision, f_meas, 
+      accuracy, kap,
+      roc_auc, sens, spec),
+    control = control_resamples(
+      save_pred = TRUE)
+    ) 
+
+rf_res_hash %>% collect_metrics(summarize = TRUE)
+
+```
+
+#### TF-idf
+
+```{r}
+
+rf_res_tf <- 
+  workflow_rf_tf %>% 
+  fit_resamples(
+    resamples = k_folds_data, 
+    metrics = metric_set(
+      recall, precision, f_meas, 
+      accuracy, kap,
+      roc_auc, sens, spec),
+    control = control_resamples(
+      save_pred = TRUE)
+    ) 
+
+rf_res_tf %>% collect_metrics(summarize = TRUE)
+
+```
+
+#### Embedings
+
+```{r}
+
+rf_res_emb <- 
+  workflow_rf_emb %>% 
+  fit_resamples(
+    resamples = k_folds_data, 
+    metrics = metric_set(
+      recall, precision, f_meas, 
+      accuracy, kap,
+      roc_auc, sens, spec),
+    control = control_resamples(
+      save_pred = TRUE)
+    ) 
+
+rf_res_emb %>% collect_metrics(summarize = TRUE)
+
+```
+
+
+## Compare performance
+
+We get a summary for the performed models. We add the model name to each metric to keep the models appart from each other later on. 
+
+```{r}
+log_metrics_tf <- 
+  log_res_tf %>% 
+  collect_metrics(summarise = TRUE) %>%
+  mutate(model = "Logistic Regression TF-idf") 
+
+log_metrics_emb <- 
+  log_res_emb %>% 
+  collect_metrics(summarise = TRUE) %>%
+  mutate(model = "Logistic Regression Embeding") 
+
+log_metrics_hash <- 
+  log_res_hash %>% 
+  collect_metrics(summarise = TRUE) %>%
+  mutate(model = "Logistic Regression Hash") 
+
+rf_metrics_tf <- 
+  rf_res_tf %>% 
+  collect_metrics(summarise = TRUE) %>%
+  mutate(model = "Random Forest TF-idf")
+
+rf_metrics_emb <- 
+  rf_res_emb %>% 
+  collect_metrics(summarise = TRUE) %>%
+  mutate(model = "Random Forest Embeding")
+
+rf_metrics_hash <- 
+  rf_res_hash %>% 
+  collect_metrics(summarise = TRUE) %>%
+  mutate(model = "Random Forest Hash")
+
+knn_metrics_tf <- 
+  knn_res_tf %>% 
+  collect_metrics(summarise = TRUE) %>%
+  mutate(model = "Knn TF-idf")
+
+knn_metrics_emb <- 
+  knn_res_emb %>% 
+  collect_metrics(summarise = TRUE) %>%
+  mutate(model = "Knn Embeding")
+
+knn_metrics_hash <- 
+  knn_res_hash %>% 
+  collect_metrics(summarise = TRUE) %>%
+  mutate(model = "Knn Hash")
+
+```
+
+```{r}
+model_compare <- bind_rows(
+                          log_metrics_tf,
+                          log_metrics_emb,
+                          log_metrics_hash,
+                          rf_metrics_tf,
+                          rf_metrics_emb,
+                          rf_metrics_hash,
+                          knn_metrics_tf,
+                          knn_metrics_emb,
+                          knn_metrics_hash
+                           ) 
+
+
+model_comp <- 
+  model_compare %>% 
+  select(model, .metric, mean, std_err) %>% 
+  pivot_wider(names_from = .metric, values_from = c(mean, std_err)) 
+
+
+model_comp %>% 
+  arrange(mean_f_meas) %>% 
+  mutate(model = fct_reorder(model, mean_f_meas)) %>% 
+  ggplot(aes(model, mean_f_meas, fill=model)) +
+  geom_col() +
+  coord_flip() +
+  scale_fill_brewer(palette = "Blues") +
+   geom_text(
+     size = 3,
+     aes(label = round(mean_f_meas, 2), y = mean_f_meas + 0.08),
+     vjust = 1
+  )
+```
+
+```{r}
+model_comp %>% 
+  arrange(mean_roc_auc) %>% 
+  mutate(model = fct_reorder(model, mean_roc_auc)) %>%
+  ggplot(aes(model, mean_roc_auc, fill=model)) +
+  geom_col() +
+  coord_flip() +
+  scale_fill_brewer(palette = "Blues") + 
+     geom_text(
+     size = 3,
+     aes(label = round(mean_roc_auc, 2), y = mean_roc_auc + 0.08),
+     vjust = 1
+  )
+```
+
+## Choose model
+
+The best model seems to be Random Forest using TF-idf we also look at the second best model which is the Logistic Regression model using TF-idf
+
+So we only continue with the two best ones. 
+
+
+### Log-reg model
+
+#### Performance metrics
+Show average performance over all folds: 
+
+```{r}
+rf_res_tf %>%  collect_metrics(summarize = TRUE)
+```
+#### Collect model predictions
+To obtain the actual model predictions, we use the function collect_predictions and save the result as log_pred:
+
+```{r}
+log_pred_tf <- 
+  rf_res_tf %>%
+  collect_predictions()
+```
+
+#### Confusion Matrix
+
+We can now use our collected predictions to make a confusion matrix
+```{r}
+log_pred_tf %>% 
+  conf_mat(y, .pred_class) 
+```
+
+```{r}
+log_pred_tf %>% 
+  conf_mat(y, .pred_class) %>% 
+  autoplot(type = "heatmap")
+```
+We can see the model does okay predicting the correct genres. 
+
+#### ROC curve
+
+We will now create the ROC curve with 1 - specificity on the x-axis (false positive fraction = FP/(FP+TN)) and sensitivity on the y axis (true positive fraction = TP/(TP+FN)). 
+```{r}
+log_pred_tf %>% 
+  roc_curve(y, .pred_fear:.pred_trust) %>% 
+  autoplot()
+```
+## Models on test data
+
+We now want to look at how the two models perform on test data. 
+
+### Random forest model
+
+```{r}
+last_fit_rf <- last_fit(workflow_rf_tf, 
+                        split = split,
+                        metrics = metric_set(
+                          recall, precision, f_meas, 
+                          accuracy, kap,
+                          roc_auc, sens, spec)
+                        )
+```
+
+
+```{r}
+last_fit_rf %>% 
+  collect_metrics()
+```
+
+WWe can again make a confusinmatrix on the testdata predictions
+
+```{r}
+last_fit_rf %>%
+  collect_predictions() %>% 
+  conf_mat(y, .pred_class) %>% 
+  autoplot(type = "heatmap")
+
+```
+
+```{r}
+last_fit_rf %>% 
+  collect_predictions() %>% 
+  roc_curve(y, .pred_fear:.pred_trust) %>% 
+  autoplot()
+```
