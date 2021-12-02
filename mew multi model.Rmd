@@ -1,0 +1,398 @@
+---
+title: "multi"
+author: "Andreas Methling"
+date: "30/11/2021"
+output: pdf_document
+---
+
+
+```{r}
+library(readr)
+library(tidyverse)
+
+
+data_start <- read_csv("C:/Users/Simon ik mig/Downloads/lyrics-data.csv.zip") #Simon
+artists_data <- read_csv("C:/Users/Simon ik mig/Downloads/artists-data (1).csv")# Simon 
+#data_start <- read_csv("C:/Users/andre/Desktop/lyrics-data.csv")
+#artists_data <- read_csv("C:/Users/andre/Downloads/artists-data.csv")
+
+```
+
+Making the artist data ready for import
+```{r}
+artists = artists_data %>% 
+  group_by(Artist) %>% 
+  count(Genre) %>% 
+  pivot_wider(names_from = Genre, values_from = n) %>% 
+  replace_na(list(Pop = 0, "Hip Hop" = 0, Rock = 0, "Funk Carioca" = 0, "Sertanejo" = 0, Samba = 0 )) %>% 
+  ungroup() %>% 
+  left_join(artists_data, by = c("Artist")) %>% 
+  select(-c(Genre, Genres, Popularity)) %>% 
+  distinct()
+```
+
+
+Combining the data and only keeping a column with the lyrics and a combined band nam song name column.
+```{r}
+glimpse(data_start)
+
+data = data_start %>% 
+  filter(Idiom == "ENGLISH") %>% 
+  rename("Link" = "ALink") %>% 
+  inner_join(artists, by = c("Link")) %>% 
+  distinct() %>%
+  mutate(name = paste(Artist, SName))%>%
+  rename(text=Lyric) %>%
+  filter(Rock==1) %>%
+  select(name, text)%>%
+  distinct(name, .keep_all = T)
+
+
+data %>%
+  count(name, sort = T)
+
+```
+
+
+
+# Make labels 
+
+Our data set didnt contain labels so we made them ourselves by first tokenizing
+```{r}
+library(tidytext)
+text_tidy = data %>% unnest_tokens(word, text, token = "words")
+
+head(text_tidy)
+```
+
+We remove stopwords and words less than two words.
+```{r}
+text_tidy %<>%
+  filter(str_length(word) > 2 ) %>% 
+  group_by(word) %>%
+  ungroup() %>%
+  anti_join(stop_words, by = 'word') 
+```
+
+Then we stem our words.
+```{r}
+library(hunspell)
+text_tidy %>%
+  mutate(stem = hunspell_stem(word)) %>%
+  unnest(stem) %>%
+  count(stem, sort = TRUE)
+
+
+text_tidy %<>% 
+  mutate(stem = hunspell_stem(word)) %>%
+  unnest(stem) %>%
+   select(-word) %>%
+  rename(word = stem)
+
+
+
+```
+
+Then we take the 10000 top words, but our data set after preprocessing only contains 8047 words so we move forward with them
+```{r}
+top_10000_words=text_tidy %>%
+  count(word,sort = T) %>%
+  head(10000) %>%
+  select(word)
+
+data_top_10000=top_10000_words %>%
+  left_join(text_tidy, by= c("word")) 
+
+```
+
+```{r}
+sentiment_nrc <- text_tidy %>%  
+  inner_join(get_sentiments("nrc"))
+
+multi_data=sentiment_nrc %>%
+  filter(sentiment %in% c("negative", "positive", "joy", "fear")) %>%
+  count(name, sentiment) %>%
+  pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>%
+  mutate(label= pmax(positive, joy, negative, fear)) %>%
+  mutate(label= ifelse(label == fear, "fear", ifelse(label == positive, "positive", ifelse(label == negative, "negative", ifelse(label == joy, "joy","none label")))))  %>%
+  select(name, label) %>%
+  inner_join(data)
+
+
+multi_data_new=sentiment_nrc %>%
+  filter(sentiment %in% c("trust", "sadness", "joy", "fear")) %>%
+  count(name, sentiment) %>%
+  pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>%
+  mutate(label= pmax(trust, joy, sadness, fear)) %>%
+  mutate(label= ifelse(label == fear, "fear", ifelse(label == trust, "trust", ifelse(label == sadness, "sadness", ifelse(label == joy, "joy","none label")))))  %>%
+  select(name, label) %>%
+  rename(y= label)%>%
+  inner_join(data)
+
+multi_data_new %>%
+  count(y)
+
+
+multi_data %>%
+  count(label)
+```
+Download glove6b
+```{r}
+if (!file.exists('glove.6B.zip')) {
+  download.file('https://nlp.stanford.edu/data/glove.6B.zip',destfile = 'glove.6B.zip')
+  unzip('glove.6B.zip')
+}
+
+```
+load into R
+```{r}
+vectors = data.table::fread('glove.6B.300d.txt', data.table = F,  encoding = 'UTF-8') 
+colnames(vectors) = c('word',paste('dim',1:300,sep = '_'))
+```
+```{r}
+as_tibble(vectors)
+```
+
+
+
+
+
+We start by creating test and training data 
+
+```{r}
+library(rsample)
+
+split5= initial_split(multi_data_new, prop = 0.75)
+
+train_data5= training(split5)
+test_data5= testing(split5)
+```
+
+
+
+```{r}
+x_train_data5= train_data5 %>% pull(text)
+
+x_test_data5= test_data5 %>% pull(text)
+```
+
+```{r}
+y_train_data5= train_data5 %>% select('y') %>% mutate(y= recode(y, "joy" = 1, "sadness" = 2,"fear" =3, "trust"= 4)) %>%
+  as.matrix()
+
+
+y_test_data5= test_data5 %>% select('y') %>% mutate(y= recode(y, "joy" = 1, "sadness" = 2,"fear" =3, "trust"= 4)) %>% as.matrix()
+```
+
+
+```{r}
+to_one_hot <- function(labels, dimension = 4) {
+  results <- matrix(0, nrow = length(labels), ncol = dimension)
+  for (i in 1:length(labels))
+    results[i, labels[[i]]] <- 1
+  results
+}
+
+
+one_hot_train_labels <- to_one_hot(y_train_data5)
+one_hot_test_labels <- to_one_hot(y_test_data5)
+```
+
+
+```{r}
+max_words = 10000
+maxlen = 200
+dim_size = 300
+```
+
+
+```{r}
+word_seqs = text_tokenizer(num_words = max_words) %>%
+  fit_text_tokenizer(x_train_data5)
+
+
+word_seqs_test = text_tokenizer(num_words = max_words) %>%
+  fit_text_tokenizer(x_test_data5)
+```
+
+
+
+```{r}
+x_train = texts_to_sequences(word_seqs, x_train_data5) %>%
+  pad_sequences( maxlen = maxlen)
+
+x_test = texts_to_sequences(word_seqs_test, x_test_data5) %>%
+  pad_sequences( maxlen = maxlen)
+```
+
+
+```{r}
+word_indices = unlist(word_seqs$word_index)
+```
+
+```{r}
+dic = data.frame(word = names(word_indices), key = word_indices, stringsAsFactors = FALSE) %>%
+  arrange(key) %>% .[1:max_words,]
+```
+
+```{r}
+word_embeds = dic  %>% left_join(vectors) %>% .[,3:302] %>% replace(., is.na(.), 0) %>% as.matrix()
+```
+```{r}
+input = layer_input(shape = list(maxlen), name = "input")
+```
+
+```{r}
+model <- keras_model_sequential()
+
+model = input %>%
+  layer_embedding(input_dim = max_words, output_dim = dim_size, input_length = maxlen, 
+                  weights = list(word_embeds), trainable = FALSE) %>%
+  layer_spatial_dropout_1d(rate = 0.2) %>%
+  bidirectional(
+    layer_lstm(units = 80, return_sequences = TRUE) 
+  )
+max_pool = model %>% layer_global_max_pooling_1d()
+ave_pool = model %>% layer_global_average_pooling_1d()
+
+output = layer_concatenate(list(ave_pool, max_pool)) %>%
+  layer_dense(units = 4, activation = "softmax")
+
+model = keras_model(input, output)
+```
+
+
+```{r}
+model %>% compile(
+  optimizer = "adam",
+  loss = "categorical_crossentropy",
+  metrics = tensorflow::tf$keras$metrics$AUC()
+)
+```
+
+```{r}
+history = model %>% keras::fit(
+  x_train, one_hot_train_labels,
+  epochs = 4,
+  batch_size = 256,
+  validation_split = 0.2
+)
+```
+
+```{r}
+metrics_gru = model %>% evaluate(x_test, one_hot_test_labels); metrics_gru
+```
+
+
+
+
+
+# herfra
+```{r}
+library(keras)
+# For Training data
+tokenizer10 <- text_tokenizer(num_words = 10000) %>%
+  fit_text_tokenizer(x_train_data5)
+sequences10 <- texts_to_sequences(tokenizer10, x_train_data5)
+
+tokenizer11 <- text_tokenizer(num_words = 10000) %>%
+  fit_text_tokenizer(x_test_data5)
+sequences11 <- texts_to_sequences(tokenizer11, x_test_data5)
+```
+
+
+
+```{r}
+vectorize_sequences <- function(sequences, dimension) {
+  results <- matrix(0, nrow = length(sequences), ncol = dimension)
+  for (i in 1:length(sequences))
+    results[i, sequences[[i]]] <- 1
+  results
+}
+
+x_train10 <- sequences10 %>% vectorize_sequences(dimension = 10000)
+
+
+
+x_test10 <- sequences11 %>%  vectorize_sequences(dimension = 10000)
+```
+
+
+
+```{r}
+model_keras5 <- keras_model_sequential()
+
+model5 <- model_keras5 %>%
+  layer_dense(units = 16, activation = "relu", input_shape = ncol(x_train10)) %>% 
+    layer_dense(units = 16, activation = "relu") %>% 
+    layer_dense(units = ncol(one_hot_train_labels), activation = "softmax")
+```
+
+We use baseline model compiling with optimizer "adam", loss "binary" as we are dealing with a binary case and the metric we wanna maximize is accuracy.
+```{r}
+model5 %>% compile(
+  optimizer = "rmsprop",
+  loss = "categorical_crossentropy",
+  metrics = "accuracy"
+)
+```
+
+Here the structure of the model can be viewed, where it can be seen that the model has 656769 tunable parameters, so not the biggest of models but not the smallest either.
+```{r}
+summary(model5)
+```
+And now the model is run 10 times with a batch size of 256
+```{r}
+set.seed(12345)
+history_ann5 <- model5 %>% fit(
+  x_train10,
+  one_hot_train_labels,
+  epochs = 3,
+  batch_size = 512,
+  validation_split = 0.25
+)
+```
+We then plot the result of the model
+```{r}
+plot(history_ann5)
+```
+
+```{r}
+metrics10 = model5 %>% evaluate(x_test10, one_hot_test_labels); metrics10
+```
+# LSTM bidirectional
+
+```{r}
+model_lstm3 = keras_model_sequential()
+model_lstm3 %>%
+  layer_embedding(input_dim = 10000, output_dim = 16) %>%
+  layer_simple_rnn(units = 16) %>% 
+  layer_dense(units = 4, activation = "softmax")
+```
+
+```{r}
+model_lstm3 %>% compile(
+  optimizer = "rmsprop",
+  loss = "categorical_crossentropy",
+  metrics = "accuracy"
+)
+```
+
+```{r}
+summary(model_lstm3)
+```
+
+```{r}
+set.seed(12345)
+history_lstm <- model_lstm3 %>% fit(
+  x_train10,
+  one_hot_train_labels,
+  epochs = 4,
+  batch_size = 1024,
+  validation_split = 0.25
+)
+```
+
+```{r}
+metrics_lstm = model_lstm3 %>% evaluate(x_test10, one_hot_test_labels); metrics_lstm
+```
